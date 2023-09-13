@@ -7,11 +7,10 @@ import uuid
 from typing import Tuple, Any
 import time
 from .openai import get_session
-from .adapter import ForceTLSV1Adapter
 
 # Requests
-import requests
-requests.packages.urllib3.util.ssl_.DEFAULT_CIPHERS = "TLS13-CHACHA20-POLY1305-SHA256:TLS13-AES-128-GCM-SHA256:TLS13-AES-256-GCM-SHA384:ECDHE:!COMPLEMENTOFDEFAULT"
+import tls_client
+
 # Local
 from . import headers as Headers
 
@@ -21,8 +20,7 @@ colorama.init(autoreset=True)
 
 __hm = Headers.mod
 
-session = requests.Session()
-session.mount("https://", ForceTLSV1Adapter())
+session = tls_client.Session(client_identifier="chrome_105")
 def _called(r, *args, **kwargs):
     if r.status_code == 200 and 'json' in r.headers['Content-Type']:
         # TODO: Add a way to check if the response is valid
@@ -115,8 +113,6 @@ def ask(
         )
         if response.status_code == 200:
             response_text = response.text.replace("data: [DONE]", "")
-            for res in response:
-                print(res)
             data = re.findall(r'data: (.*)', response_text)[-1]
             as_json = json.loads(data)
             return as_json["message"]["content"]["parts"][0], as_json["message"]["id"], as_json["conversation_id"]

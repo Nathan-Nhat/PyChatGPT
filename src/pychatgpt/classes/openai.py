@@ -24,12 +24,9 @@ from . import exceptions as Exceptions
 # Fancy stuff
 import colorama
 from colorama import Fore
-import requests
-from .adapter import ForceTLSV1Adapter
 
 colorama.init(autoreset=True)
 
-requests.packages.urllib3.util.ssl_.DEFAULT_CIPHERS = "TLS13-CHACHA20-POLY1305-SHA256:TLS13-AES-128-GCM-SHA256:TLS13-AES-256-GCM-SHA384:ECDHE:!COMPLEMENTOFDEFAULT"
 
 def token_expired() -> bool:
     """
@@ -95,8 +92,9 @@ class Auth:
         self.email_address = email_address
         self.password = password
         self.proxy = proxy
-        self.__session = requests.Session()
-        self.__session.mount("https://", ForceTLSV1Adapter())
+        self.__session = tls_client.Session(
+            client_identifier="chrome_105"
+        )
 
     @staticmethod
     def _url_encode(string: str) -> str:
