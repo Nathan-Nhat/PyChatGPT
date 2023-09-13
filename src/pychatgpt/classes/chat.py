@@ -125,10 +125,11 @@ def ask(
             for  jsondata in njsondata:
                 if jsondata:
                     line = json.loads(jsondata)
-                    # res =  line["completion"]
-                    response.append(line)
-            summary = response.pop()
-            return response, summary["message_id"], summary["conversation_id"]
+                    if line.get("message"):
+                        if line.get("author").get("role") == "assistant":
+                            response.append(line)
+            summary = line
+            return response[-1], summary["conversation_id"]
         elif response.status_code == 401:
             # Check if auth.json exists, if so, delete it
             if os.path.exists("auth.json"):
