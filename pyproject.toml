@@ -12,7 +12,7 @@ description = "⚡️TLS-based ChatGPT API with auto token regeneration, convers
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
-  "tls-client",
+  "curl-cffi",
   "requests",
   "colorama",
   "svglib",
