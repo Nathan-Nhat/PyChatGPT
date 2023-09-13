@@ -130,7 +130,7 @@ def ask(
                         if message.get("author").get("role") == "assistant":
                             response.append(line)
             summary = line
-            return response[-1], summary["conversation_id"]
+            return response[-1], summary["message_id"], summary["conversation_id"]
         elif response.status_code == 401:
             # Check if auth.json exists, if so, delete it
             if os.path.exists("auth.json"):
