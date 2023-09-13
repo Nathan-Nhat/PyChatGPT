@@ -29,6 +29,7 @@ from .adapter import ForceTLSV1Adapter
 
 colorama.init(autoreset=True)
 
+requests.packages.urllib3.util.ssl_.DEFAULT_CIPHERS = "TLS13-CHACHA20-POLY1305-SHA256:TLS13-AES-128-GCM-SHA256:TLS13-AES-256-GCM-SHA384:ECDHE:!COMPLEMENTOFDEFAULT"
 
 def token_expired() -> bool:
     """
