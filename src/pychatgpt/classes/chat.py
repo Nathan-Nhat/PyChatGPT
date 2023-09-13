@@ -19,9 +19,9 @@ from queue import Queue
 from typing import Tuple, Any
 
 # Local
-from classes import headers as Headers
-from classes import openai as OpenAI
-from classes import exceptions as Exceptions
+from pychatgpt.classes import headers as Headers
+from pychatgpt.classes import openai as OpenAI
+from pychatgpt.classes import exceptions as Exceptions
 
 # Colorama
 import colorama
