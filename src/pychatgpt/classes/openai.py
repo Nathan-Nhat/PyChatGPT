@@ -244,7 +244,6 @@ class Auth:
                     if cookie.name == "__Secure-next-auth.session-token":
                         expired_date = cookie.expires
                         break
-                print(expired_date)
                 self.save_session({
                         "__Secure-next-auth.session-token": {
                             "value": self.__session.cookies.get("__Secure-next-auth.session-token"),
