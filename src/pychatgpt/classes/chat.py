@@ -94,7 +94,7 @@ def ask(
     }
     if conversation_id:
         data["conversation_id"] = conversation_id
-    if 1:
+    try:
         session_dict = get_session()
         for key, item in session_dict.items():
             session.cookies.set(key, item, domain="chat.openapi.com")
@@ -125,8 +125,9 @@ def ask(
             for  jsondata in njsondata:
                 if jsondata:
                     line = json.loads(jsondata)
-                    if line.get("message"):
-                        if line.get("author").get("role") == "assistant":
+                    message = line.get("message")
+                    if message:
+                        if message.get("author").get("role") == "assistant":
                             response.append(line)
             summary = line
             return response[-1], summary["conversation_id"]
@@ -141,6 +142,6 @@ def ask(
             return f"[Status Code] {response.status_code} | [Response Text] {response.text}", None, None
         else:
             return f"[Status Code] {response.status_code} | [Response Text] {response.text}", None, None
-    # except Exception as e:
-    #     print(">> Error when calling OpenAI API: " + str(e))
-    #     return "400", None, None
+    except Exception as e:
+        print(">> Error when calling OpenAI API: " + str(e))
+        return "400", None, None
