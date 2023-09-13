@@ -21,10 +21,10 @@ from queue import Queue
 from typing import Tuple, Any
 
 # Local
-from classes import openai as OpenAI
-from classes import chat as ChatHandler
-from classes import spinner as Spinner
-from classes import exceptions as Exceptions
+from pychatgpt.classes import openai as OpenAI
+from pychatgpt.classes import chat as ChatHandler
+from pychatgpt.classes import spinner as Spinner
+from pychatgpt.classes import exceptions as Exceptions
 
 # Colorama
 import colorama
