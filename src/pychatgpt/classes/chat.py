@@ -373,6 +373,7 @@ class Chat:
             if response.status_code == 200:
                 response = []
                 data_str = "".join(data_res).replace("data: [DONE]", "")
+                self.log(f"{Fore.GREEN}{data_str}")
                 njsondata = data_str.replace("data: ","").split("\n\n")
                 for  jsondata in njsondata:
                     if jsondata:
