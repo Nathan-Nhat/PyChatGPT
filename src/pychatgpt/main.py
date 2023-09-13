@@ -6,7 +6,7 @@ import sys
 import time
 import os
 from queue import Queue
-from typing import Tuple
+from typing import Tuple, Any
 
 # Local
 from .classes import openai as OpenAI
@@ -175,7 +175,7 @@ class Chat:
             previous_convo_id: str or None = None,
             conversation_id: str or None = None,
             rep_queue: Queue or None = None
-            ) -> Tuple[str or None, str or None, str or None] or None:
+            ) -> Tuple[Any, None or str, None or str]:
 
         if prompt is None:
             self.log(f"{Fore.RED}>> Enter a prompt.")
@@ -209,7 +209,7 @@ class Chat:
         if conversation_id is not None:
             self.conversation_id = conversation_id
 
-        answer, previous_convo, convo_id = ChatHandler.ask(auth_token=access_token, prompt=prompt,
+        answer,  previous_convo, convo_id = ChatHandler.ask(auth_token=access_token, prompt=prompt,
                                                            conversation_id=self.conversation_id,
                                                            previous_convo_id=self.previous_convo_id,
                                                            proxies=self.options.proxies,
@@ -221,7 +221,7 @@ class Chat:
         if answer == "400" or answer == "401":
             self.log(f"{Fore.RED}>> Failed to get a response from the API.")
             return None
-
+        
         self.conversation_id = convo_id
         self.previous_convo_id = previous_convo
 
@@ -239,8 +239,10 @@ class Chat:
                     f.write("\n".join(self.__chat_history) + "\n")
 
                 with open(self.options.id_log, "w") as f:
-                    f.write(str(self.previous_convo_id) + "\n")
-                    f.write(str(self.conversation_id) + "\n")
+                    if self.previous_convo_id:
+                        f.write(str(self.previous_convo_id) + "\n")
+                    if self.conversation_id:
+                        f.write(str(self.conversation_id) + "\n")
 
             except Exception as ex:
                 self.log(f"{Fore.RED}>> Failed to save chat and ids to chat log and id_log."

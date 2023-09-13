@@ -24,6 +24,8 @@ from . import exceptions as Exceptions
 # Fancy stuff
 import colorama
 from colorama import Fore
+import requests
+from .adapter import ForceTLSV1Adapter
 
 colorama.init(autoreset=True)
 
@@ -69,15 +71,31 @@ def get_access_token() -> Tuple[str or None, str or None]:
     except FileNotFoundError:
         return None, None
 
+def get_session() -> dict:
+    """
+        Get session
+        returns:
+            dict: Session dict
+    """
+    try:
+        # Get path using os, it's in ./Classes/auth.json
+        path = os.path.dirname(os.path.abspath(__file__))
+        path = os.path.join(path, "session.json")
+
+        with open(path, 'r') as f:
+            session = json.load(f)
+            return session
+    except FileNotFoundError:
+        return None
+
 
 class Auth:
     def __init__(self, email_address: str, password: str, proxy: str = None):
         self.email_address = email_address
         self.password = password
         self.proxy = proxy
-        self.__session = tls_client.Session(
-            client_identifier="chrome_105"
-        )
+        self.__session = requests.Session()
+        self.__session.mount("https://", ForceTLSV1Adapter())
 
     @staticmethod
     def _url_encode(string: str) -> str:
@@ -116,19 +134,23 @@ class Auth:
         # First, make a request to https://chat.openai.com/auth/login
         url = "https://chat.openai.com/auth/login"
         headers = {
-            "Host": "ask.openai.com",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15',
-            "Accept-Language": "en-GB,en-US;q=0.9,en;q=0.8",
-            "Accept-Encoding": "gzip, deflate, br",
-            "Connection": "keep-alive",
+            "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15',
+            "accept-Language": "en-GB,en-US;q=0.9,en;q=0.8",
+            "accept-Encoding": "gzip, deflate, br",
+            "connection": "keep-alive",
         }
         print(f"{Fore.GREEN}[OpenAI][1] {Fore.WHITE}Making request to {url}")
 
         response = self.__session.get(url=url, headers=headers)
         if response.status_code == 200:
             print(f"{Fore.GREEN}[OpenAI][1] {Fore.WHITE}Request was " + Fore.GREEN + "successful")
-            self._part_two()
+            session_url = "https://chat.openai.com/api/auth/session"
+            print(f"{Fore.GREEN}[OpenAI][1] {Fore.WHITE}Making request to {session_url}")
+            res = self.__session.get(session_url, headers=headers)
+            if (res.status_code == 200):
+                print(f"{Fore.GREEN}[OpenAI][1] {Fore.WHITE}Request was " + Fore.GREEN + "successful")
+                self._part_two()
         else:
             raise Exceptions.Auth0Exception("Failed to make the first request, Try that again!")
 
@@ -140,13 +162,12 @@ class Auth:
         print(f"{Fore.GREEN}[OpenAI][2] {Fore.WHITE}Beginning part two")
         url = "https://chat.openai.com/api/auth/csrf"
         headers = {
-            "Host": "ask.openai.com",
-            "Accept": "*/*",
-            "Connection": "keep-alive",
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15',
-            "Accept-Language": "en-GB,en-US;q=0.9,en;q=0.8",
-            "Referer": "https://chat.openai.com/auth/login",
-            "Accept-Encoding": "gzip, deflate, br",
+            "accept": "*/*",
+            "connection": "keep-alive",
+            'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15',
+            "accept-Language": "en-GB,en-US;q=0.9,en;q=0.8",
+            "referer": "https://chat.openai.com/auth/login",
+            "accept-Encoding": "gzip, deflate, br",
         }
         print(f"{Fore.GREEN}[OpenAI][2] {Fore.WHITE}Grabbing CSRF token from {url}")
         response = self.__session.get(url=url, headers=headers)
@@ -167,15 +188,13 @@ class Auth:
 
         payload = f'callbackUrl=%2F&csrfToken={token}&json=true'
         headers = {
-            'Host': 'ask.openai.com',
-            'Origin': 'https://chat.openai.com',
-            'Connection': 'keep-alive',
-            'Accept': '*/*',
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15',
-            'Referer': 'https://chat.openai.com/auth/login',
-            'Content-Length': '100',
-            'Accept-Language': 'en-GB,en-US;q=0.9,en;q=0.8',
-            'Content-Type': 'application/x-www-form-urlencoded',
+            'authority': 'chat.openai.com',
+            'origin': 'https://chat.openai.com',
+            'accept': '*/*',
+            'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15',
+            'referer': 'https://chat.openai.com/auth/login',
+            'accept-Language': 'en-GB,en-US;q=0.9,en;q=0.8',
+            'content-Type': 'application/x-www-form-urlencoded',
         }
         print(f"{Fore.GREEN}[OpenAI][3] {Fore.WHITE}Making request to {url}")
         response = self.__session.post(url=url, headers=headers, data=payload)
@@ -201,12 +220,11 @@ class Auth:
         :return:
         """
         headers = {
-            'Host': 'auth0.openai.com',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Connection': 'keep-alive',
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Referer': 'https://chat.openai.com/',
+            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'connection': 'keep-alive',
+            'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15',
+            'accept-Language': 'en-US,en;q=0.9',
+            'referer': 'https://chat.openai.com/',
         }
         print(f"{Fore.GREEN}[OpenAI][4] {Fore.WHITE}Making request to {url}")
         response = self.__session.get(url=url, headers=headers)
@@ -226,12 +244,11 @@ class Auth:
         url = f"https://auth0.openai.com/u/login/identifier?state={state}"
 
         headers = {
-            'Host': 'auth0.openai.com',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Connection': 'keep-alive',
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Referer': 'https://chat.openai.com/',
+            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'connection': 'keep-alive',
+            'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15',
+            'accept-Language': 'en-US,en;q=0.9',
+            'referer': 'https://chat.openai.com/',
         }
         print(f"{Fore.GREEN}[OpenAI][5] {Fore.WHITE}Making request to {url}")
         response = self.__session.get(url, headers=headers)
@@ -283,14 +300,13 @@ class Auth:
             payload = f'state={state}&username={email_url_encoded}&js-available=false&webauthn-available=true&is-brave=false&webauthn-platform-available=true&action=default'
 
         headers = {
-            'Host': 'auth0.openai.com',
-            'Origin': 'https://auth0.openai.com',
-            'Connection': 'keep-alive',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15',
-            'Referer': f'https://auth0.openai.com/u/login/identifier?state={state}',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Content-Type': 'application/x-www-form-urlencoded',
+            'origin': 'https://auth0.openai.com',
+            'connection': 'keep-alive',
+            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15',
+            'referer': f'https://auth0.openai.com/u/login/identifier?state={state}',
+            'accept-Language': 'en-US,en;q=0.9',
+            'content-Type': 'application/x-www-form-urlencoded',
         }
         response = self.__session.post(url, headers=headers, data=payload)
         if response.status_code == 302:
@@ -312,14 +328,13 @@ class Auth:
         password_url_encoded = self._url_encode(self.password)
         payload = f'state={state}&username={email_url_encoded}&password={password_url_encoded}&action=default'
         headers = {
-            'Host': 'auth0.openai.com',
-            'Origin': 'https://auth0.openai.com',
-            'Connection': 'keep-alive',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15',
-            'Referer': f'https://auth0.openai.com/u/login/password?state={state}',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Content-Type': 'application/x-www-form-urlencoded',
+            'origin': 'https://auth0.openai.com',
+            'connection': 'keep-alive',
+            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15',
+            'referer': f'https://auth0.openai.com/u/login/password?state={state}',
+            'accept-Language': 'en-US,en;q=0.9',
+            'content-Type': 'application/x-www-form-urlencoded',
         }
         response = self.__session.post(url, headers=headers, data=payload)
         is_302 = response.status_code == 302
@@ -337,12 +352,11 @@ class Auth:
         url = f"https://auth0.openai.com/authorize/resume?state={new_state}"
         print(f"{Fore.GREEN}[OpenAI][8] {Fore.WHITE}Making request to {Fore.GREEN}{url}")
         headers = {
-            'Host': 'auth0.openai.com',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Connection': 'keep-alive',
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15',
-            'Accept-Language': 'en-GB,en-US;q=0.9,en;q=0.8',
-            'Referer': f'https://auth0.openai.com/u/login/password?state={old_state}',
+            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'connection': 'keep-alive',
+            'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15',
+            'accept-Language': 'en-GB,en-US;q=0.9,en;q=0.8',
+            'referer': f'https://auth0.openai.com/u/login/password?state={old_state}',
         }
         response = self.__session.get(url, headers=headers, allow_redirects=True)
         is_200 = response.status_code == 200
@@ -359,6 +373,7 @@ class Auth:
                 print(f"{Fore.GREEN}[OpenAI][8] {Fore.WHITE}Access Token: {Fore.GREEN}{access_token}")
                 # Save access_token
                 self.save_access_token(access_token=access_token)
+                self.save_session(self.__session.cookies.get_dict())
             else:
                 print(f"{Fore.GREEN}[OpenAI][8][CRITICAL] {Fore.WHITE}Access Token: {Fore.RED}Not found"
                       f" Auth0 did not issue an access token.")
@@ -369,14 +384,13 @@ class Auth:
               f"Attempting to get access token from: https://chat.openai.com/api/auth/session")
         url = "https://chat.openai.com/api/auth/session"
         headers = {
-            "Host": "ask.openai.com",
-            "Connection": "keep-alive",
-            "If-None-Match": "\"bwc9mymkdm2\"",
-            "Accept": "*/*",
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15",
-            "Accept-Language": "en-GB,en-US;q=0.9,en;q=0.8",
-            "Referer": "https://chat.openai.com/chat",
-            "Accept-Encoding": "gzip, deflate, br",
+            "connection": "keep-alive",
+            "if-None-Match": "\"bwc9mymkdm2\"",
+            "accept": "*/*",
+            "user-agent'": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15",
+            "accept-Language": "en-GB,en-US;q=0.9,en;q=0.8",
+            "referer": "https://chat.openai.com/chat",
+            "accept-Encoding": "gzip, deflate, br",
         }
         response = self.__session.get(url, headers=headers)
         is_200 = response.status_code == 200
@@ -387,6 +401,7 @@ class Auth:
                 access_token = json_response['accessToken']
                 print(f"{Fore.GREEN}[OpenAI][9] {Fore.WHITE}Access Token: {Fore.GREEN}{access_token}")
                 self.save_access_token(access_token=access_token)
+                self.save_session(self.__session.cookies.get_dict())
             else:
                 print(f"{Fore.GREEN}[OpenAI][9] {Fore.WHITE}Access Token: {Fore.RED}Not found, "
                       f"Please try again with a proxy (or use a new proxy if you are using one)")
@@ -415,3 +430,17 @@ class Auth:
             print(f"{Fore.GREEN}[OpenAI][8] {Fore.WHITE}Saved access token")
         except Exception as e:
             raise e
+        
+    @staticmethod
+    def save_session(session: dict):
+        try:
+            print(f"{Fore.GREEN}[OpenAI][9] {Fore.WHITE}Saving session...")
+            path = os.path.dirname(os.path.abspath(__file__))
+            path = os.path.join(path, "session.json")
+            with open(path, "w") as f:
+                f.write(json.dumps(session))
+
+            print(f"{Fore.GREEN}[OpenAI][8] {Fore.WHITE}Saved session")
+        except Exception as e:
+            raise e
+

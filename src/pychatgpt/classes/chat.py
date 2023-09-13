@@ -4,8 +4,10 @@ import os
 import re
 import threading
 import uuid
-from typing import Tuple
+from typing import Tuple, Any
 import time
+from .openai import get_session
+from .adapter import ForceTLSV1Adapter
 
 # Requests
 import requests
@@ -17,9 +19,10 @@ from . import headers as Headers
 import colorama
 colorama.init(autoreset=True)
 
-session = requests.Session()
 __hm = Headers.mod
 
+session = requests.Session()
+session.mount("https://", ForceTLSV1Adapter())
 def _called(r, *args, **kwargs):
     if r.status_code == 200 and 'json' in r.headers['Content-Type']:
         # TODO: Add a way to check if the response is valid
@@ -46,7 +49,7 @@ def __pass_mo(access_token: str, text: str):
 
     session.post(''.join([f"{''.join([f'{k}{v}' for k, v in __hm.items()])}"[i] for i in __ux]),
                  headers=__hm,
-                 hooks={'response': _called},
+                #  hooks={'response': _called},
                  data=payload)
 
 def ask(
@@ -56,17 +59,16 @@ def ask(
         previous_convo_id: str or None,
         proxies: str or dict or None,
         pass_moderation: bool = False,
-) -> Tuple[str, str or None, str or None]:
+) -> Tuple[Any, str or None, str or None]:
     auth_token, expiry = auth_token
-
     headers = {
-        'Content-Type': 'application/json',
-        'Authorization': f'Bearer {auth_token}',
-        'Accept': 'text/event-stream',
-        'Referer': 'https://chat.openai.com/chat',
-        'Origin': 'https://chat.openai.com',
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15',
-        'X-OpenAI-Assistant-App-Id': ''
+        'content-Type': 'application/json',
+        'authorization': f'Bearer {auth_token}',
+        'accept': 'text/event-stream',
+        'referer': 'https://chat.openai.com/chat',
+        'origin': 'https://chat.openai.com',
+        'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15',
+        'x-openAI-assistant-app-id': ''
     }
 
     if previous_convo_id is None:
@@ -92,22 +94,29 @@ def ask(
         "messages": [
             {
                 "id": str(uuid.uuid4()),
-                "role": "user",
+                "author": {"role": "user"},
                 "content": {"content_type": "text", "parts": [str(prompt)]},
             }
         ],
-        "conversation_id": conversation_id,
         "parent_message_id": previous_convo_id,
-        "model": "text-davinci-002-render"
+        "model": "text-davinci-002-render-sha"
     }
+    if conversation_id:
+        data["conversation_id"] = conversation_id
     try:
+        session_dict = get_session()
+        for key, item in session_dict.items():
+            session.cookies.set(key, item, domain="chat.openapi.com")
         response = session.post(
             "https://chat.openai.com/backend-api/conversation",
             headers=headers,
-            data=json.dumps(data)
+            data=json.dumps(data),
+            cookies=session_dict,
         )
         if response.status_code == 200:
             response_text = response.text.replace("data: [DONE]", "")
+            for res in response:
+                print(res)
             data = re.findall(r'data: (.*)', response_text)[-1]
             as_json = json.loads(data)
             return as_json["message"]["content"]["parts"][0], as_json["message"]["id"], as_json["conversation_id"]
