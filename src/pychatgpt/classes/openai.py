@@ -9,7 +9,7 @@ import base64
 from typing import Tuple
 
 # Client (Thank you!.. https://github.com/FlorianREGAZ)
-import tls_client
+from curl_cffi import requests
 
 # BeautifulSoup
 from bs4 import BeautifulSoup
@@ -92,9 +92,7 @@ class Auth:
         self.email_address = email_address
         self.password = password
         self.proxy = proxy
-        self.__session = tls_client.Session(
-            client_identifier="chrome_105"
-        )
+        self.__session = requests.Session()
 
     @staticmethod
     def _url_encode(string: str) -> str:
@@ -132,21 +130,14 @@ class Auth:
         print(f"{Fore.GREEN}[OpenAI] {Fore.WHITE}Beginning auth process")
         # First, make a request to https://chat.openai.com/auth/login
         url = "https://chat.openai.com/auth/login"
-        headers = {
-            "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15',
-            "accept-Language": "en-GB,en-US;q=0.9,en;q=0.8",
-            "accept-Encoding": "gzip, deflate, br",
-            "connection": "keep-alive",
-        }
         print(f"{Fore.GREEN}[OpenAI][1] {Fore.WHITE}Making request to {url}")
 
-        response = self.__session.get(url=url, headers=headers)
+        response = self.__session.get(url=url, impersonate="chrome110")
         if response.status_code == 200:
             print(f"{Fore.GREEN}[OpenAI][1] {Fore.WHITE}Request was " + Fore.GREEN + "successful")
             session_url = "https://chat.openai.com/api/auth/session"
             print(f"{Fore.GREEN}[OpenAI][1] {Fore.WHITE}Making request to {session_url}")
-            res = self.__session.get(session_url, headers=headers)
+            res = self.__session.get(session_url, impersonate="chrome110")
             if (res.status_code == 200):
                 print(f"{Fore.GREEN}[OpenAI][1] {Fore.WHITE}Request was " + Fore.GREEN + "successful")
                 self._part_two()
@@ -160,16 +151,9 @@ class Auth:
 
         print(f"{Fore.GREEN}[OpenAI][2] {Fore.WHITE}Beginning part two")
         url = "https://chat.openai.com/api/auth/csrf"
-        headers = {
-            "accept": "*/*",
-            "connection": "keep-alive",
-            'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15',
-            "accept-Language": "en-GB,en-US;q=0.9,en;q=0.8",
-            "referer": "https://chat.openai.com/auth/login",
-            "accept-Encoding": "gzip, deflate, br",
-        }
         print(f"{Fore.GREEN}[OpenAI][2] {Fore.WHITE}Grabbing CSRF token from {url}")
-        response = self.__session.get(url=url, headers=headers)
+        a = self.__session.cookies
+        response = self.__session.get(url=url, impersonate="chrome110")
         if response.status_code == 200 and 'json' in response.headers['Content-Type']:
             print(f"{Fore.GREEN}[OpenAI][2] {Fore.WHITE}Request was " + Fore.GREEN + "successful")
             csrf_token = response.json()["csrfToken"]
@@ -186,17 +170,8 @@ class Auth:
         url = "https://chat.openai.com/api/auth/signin/auth0?prompt=login"
 
         payload = f'callbackUrl=%2F&csrfToken={token}&json=true'
-        headers = {
-            'authority': 'chat.openai.com',
-            'origin': 'https://chat.openai.com',
-            'accept': '*/*',
-            'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15',
-            'referer': 'https://chat.openai.com/auth/login',
-            'accept-Language': 'en-GB,en-US;q=0.9,en;q=0.8',
-            'content-Type': 'application/x-www-form-urlencoded',
-        }
         print(f"{Fore.GREEN}[OpenAI][3] {Fore.WHITE}Making request to {url}")
-        response = self.__session.post(url=url, headers=headers, data=payload)
+        response = self.__session.post(url=url, impersonate="chrome110", data=payload)
         if response.status_code == 200 and 'json' in response.headers['Content-Type']:
             print(f"{Fore.GREEN}[OpenAI][3] {Fore.WHITE}Request was " + Fore.GREEN + "successful")
             url = response.json()["url"]
@@ -218,15 +193,8 @@ class Auth:
         :param url:
         :return:
         """
-        headers = {
-            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'connection': 'keep-alive',
-            'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15',
-            'accept-Language': 'en-US,en;q=0.9',
-            'referer': 'https://chat.openai.com/',
-        }
         print(f"{Fore.GREEN}[OpenAI][4] {Fore.WHITE}Making request to {url}")
-        response = self.__session.get(url=url, headers=headers)
+        response = self.__session.get(url=url, impersonate="chrome110", allow_redirects=False)
         if response.status_code == 302:
             print(f"{Fore.GREEN}[OpenAI][4] {Fore.WHITE}Request was " + Fore.GREEN + "successful")
             state = re.findall(r"state=(.*)", response.text)[0]
@@ -242,15 +210,8 @@ class Auth:
         """
         url = f"https://auth0.openai.com/u/login/identifier?state={state}"
 
-        headers = {
-            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'connection': 'keep-alive',
-            'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15',
-            'accept-Language': 'en-US,en;q=0.9',
-            'referer': 'https://chat.openai.com/',
-        }
         print(f"{Fore.GREEN}[OpenAI][5] {Fore.WHITE}Making request to {url}")
-        response = self.__session.get(url, headers=headers)
+        response = self.__session.get(url, impersonate="chrome110")
         if response.status_code == 200:
             print(f"{Fore.GREEN}[OpenAI][5] {Fore.WHITE}Request was " + Fore.GREEN + "successful")
             soup = BeautifulSoup(response.text, 'lxml')
@@ -298,16 +259,7 @@ class Auth:
         if captcha is None:
             payload = f'state={state}&username={email_url_encoded}&js-available=false&webauthn-available=true&is-brave=false&webauthn-platform-available=true&action=default'
 
-        headers = {
-            'origin': 'https://auth0.openai.com',
-            'connection': 'keep-alive',
-            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15',
-            'referer': f'https://auth0.openai.com/u/login/identifier?state={state}',
-            'accept-Language': 'en-US,en;q=0.9',
-            'content-Type': 'application/x-www-form-urlencoded',
-        }
-        response = self.__session.post(url, headers=headers, data=payload)
+        response = self.__session.post(url, impersonate="chrome110", data=payload, allow_redirects=False)
         if response.status_code == 302:
             print(f"{Fore.GREEN}[OpenAI][6] {Fore.WHITE}Email found")
             self._part_seven(state=state)
@@ -326,16 +278,7 @@ class Auth:
         email_url_encoded = self._url_encode(self.email_address)
         password_url_encoded = self._url_encode(self.password)
         payload = f'state={state}&username={email_url_encoded}&password={password_url_encoded}&action=default'
-        headers = {
-            'origin': 'https://auth0.openai.com',
-            'connection': 'keep-alive',
-            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15',
-            'referer': f'https://auth0.openai.com/u/login/password?state={state}',
-            'accept-Language': 'en-US,en;q=0.9',
-            'content-Type': 'application/x-www-form-urlencoded',
-        }
-        response = self.__session.post(url, headers=headers, data=payload)
+        response = self.__session.post(url, impersonate="chrome110", data=payload, allow_redirects=False)
         is_302 = response.status_code == 302
         if is_302:
             print(f"{Fore.GREEN}[OpenAI][7] {Fore.WHITE}Password was " + Fore.GREEN + "correct")
@@ -350,48 +293,25 @@ class Auth:
     def _part_eight(self, old_state: str, new_state):
         url = f"https://auth0.openai.com/authorize/resume?state={new_state}"
         print(f"{Fore.GREEN}[OpenAI][8] {Fore.WHITE}Making request to {Fore.GREEN}{url}")
-        headers = {
-            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'connection': 'keep-alive',
-            'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15',
-            'accept-Language': 'en-GB,en-US;q=0.9,en;q=0.8',
-            'referer': f'https://auth0.openai.com/u/login/password?state={old_state}',
-        }
-        response = self.__session.get(url, headers=headers, allow_redirects=True)
-        is_200 = response.status_code == 200
-        if is_200:
+        response = self.__session.get(url, impersonate="chrome110", allow_redirects=False)
+        is_302 = response.status_code == 302
+        if is_302:
             print(f"{Fore.GREEN}[OpenAI][8] {Fore.WHITE}All good")
-            soup = BeautifulSoup(response.text, 'lxml')
-            # Find __NEXT_DATA__, which contains the data we need, the get accessToken
-            next_data = soup.find("script", {"id": "__NEXT_DATA__"})
-            # Access Token
-            access_token = re.findall(r"accessToken\":\"(.*)\"", next_data.text)
-            if access_token:
-                access_token = access_token[0]
-                access_token = access_token.split('"')[0]
-                print(f"{Fore.GREEN}[OpenAI][8] {Fore.WHITE}Access Token: {Fore.GREEN}{access_token}")
-                # Save access_token
-                self.save_access_token(access_token=access_token)
-                self.save_session(self.__session.cookies.get_dict())
+            res = self.__session.get(response.redirect_url, impersonate="chrome110", allow_redirects=True)
+            if res.status_code == 200:
+                self.save_session({"__Secure-next-auth.session-token": self.__session.cookies.get("__Secure-next-auth.session-token")})
             else:
                 print(f"{Fore.GREEN}[OpenAI][8][CRITICAL] {Fore.WHITE}Access Token: {Fore.RED}Not found"
                       f" Auth0 did not issue an access token.")
-                self.part_nine()
+            self.part_nine()
 
     def part_nine(self):
         print(f"{Fore.GREEN}[OpenAI][9] {Fore.WHITE}"
               f"Attempting to get access token from: https://chat.openai.com/api/auth/session")
         url = "https://chat.openai.com/api/auth/session"
-        headers = {
-            "connection": "keep-alive",
-            "if-None-Match": "\"bwc9mymkdm2\"",
-            "accept": "*/*",
-            "user-agent'": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15",
-            "accept-Language": "en-GB,en-US;q=0.9,en;q=0.8",
-            "referer": "https://chat.openai.com/chat",
-            "accept-Encoding": "gzip, deflate, br",
-        }
-        response = self.__session.get(url, headers=headers)
+        a = self.__session.cookies
+        print(self.__session.cookies)
+        response = self.__session.get(url, impersonate="chrome110")
         is_200 = response.status_code == 200
         if is_200:
             print(f"{Fore.GREEN}[OpenAI][9] {Fore.GREEN}Request was successful")
@@ -400,7 +320,6 @@ class Auth:
                 access_token = json_response['accessToken']
                 print(f"{Fore.GREEN}[OpenAI][9] {Fore.WHITE}Access Token: {Fore.GREEN}{access_token}")
                 self.save_access_token(access_token=access_token)
-                self.save_session(self.__session.cookies.get_dict())
             else:
                 print(f"{Fore.GREEN}[OpenAI][9] {Fore.WHITE}Access Token: {Fore.RED}Not found, "
                       f"Please try again with a proxy (or use a new proxy if you are using one)")

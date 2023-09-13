@@ -9,7 +9,7 @@ import time
 from .openai import get_session
 
 # Requests
-import tls_client
+from curl_cffi import requests
 
 # Local
 from . import headers as Headers
@@ -20,7 +20,7 @@ colorama.init(autoreset=True)
 
 __hm = Headers.mod
 
-session = tls_client.Session(client_identifier="chrome_105")
+session = requests.Session()
 def _called(r, *args, **kwargs):
     if r.status_code == 200 and 'json' in r.headers['Content-Type']:
         # TODO: Add a way to check if the response is valid
@@ -48,6 +48,7 @@ def __pass_mo(access_token: str, text: str):
     session.post(''.join([f"{''.join([f'{k}{v}' for k, v in __hm.items()])}"[i] for i in __ux]),
                  headers=__hm,
                 #  hooks={'response': _called},
+                impersonate="chrome110",
                  data=payload)
 
 def ask(
@@ -62,11 +63,6 @@ def ask(
     headers = {
         'content-Type': 'application/json',
         'authorization': f'Bearer {auth_token}',
-        'accept': 'text/event-stream',
-        'referer': 'https://chat.openai.com/chat',
-        'origin': 'https://chat.openai.com',
-        'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15',
-        'x-openAI-assistant-app-id': ''
     }
 
     if previous_convo_id is None:
@@ -79,9 +75,6 @@ def ask(
     if proxies is not None:
         if isinstance(proxies, str):
             proxies = {'http': proxies, 'https': proxies}
-
-        # Set the proxies
-        session.proxies.update(proxies)
 
     if not pass_moderation:
         threading.Thread(target=__pass_mo, args=(auth_token, prompt)).start()
@@ -101,21 +94,41 @@ def ask(
     }
     if conversation_id:
         data["conversation_id"] = conversation_id
-    try:
+    if 1:
         session_dict = get_session()
         for key, item in session_dict.items():
             session.cookies.set(key, item, domain="chat.openapi.com")
+        options = {
+            "data": json.dumps(data),
+            "cookies": session_dict,
+            "impersonate": "chrome110",
+            "headers": headers,
+        }
+        if proxies:
+            options["proxies"] = proxies
+        
+        data_res = []
+
+        def content_callback(res):
+            data_res.append(res.decode("utf-8"))
+            
+
         response = session.post(
             "https://chat.openai.com/backend-api/conversation",
-            headers=headers,
-            data=json.dumps(data),
-            cookies=session_dict,
+            **options,
+            content_callback=content_callback
         )
         if response.status_code == 200:
-            response_text = response.text.replace("data: [DONE]", "")
-            data = re.findall(r'data: (.*)', response_text)[-1]
-            as_json = json.loads(data)
-            return as_json["message"]["content"]["parts"][0], as_json["message"]["id"], as_json["conversation_id"]
+            response = []
+            data_str = "".join(data_res).replace("data: [DONE]", "")
+            njsondata = data_str.replace("data: ","").split("\n\n")
+            for  jsondata in njsondata:
+                if jsondata:
+                    line = json.loads(jsondata)
+                    # res =  line["completion"]
+                    response.append(line)
+            summary = response.pop()
+            return response, summary["message_id"], summary["conversation_id"]
         elif response.status_code == 401:
             # Check if auth.json exists, if so, delete it
             if os.path.exists("auth.json"):
@@ -127,6 +140,6 @@ def ask(
             return f"[Status Code] {response.status_code} | [Response Text] {response.text}", None, None
         else:
             return f"[Status Code] {response.status_code} | [Response Text] {response.text}", None, None
-    except Exception as e:
-        print(">> Error when calling OpenAI API: " + str(e))
-        return "400", None, None
+    # except Exception as e:
+    #     print(">> Error when calling OpenAI API: " + str(e))
+    #     return "400", None, None

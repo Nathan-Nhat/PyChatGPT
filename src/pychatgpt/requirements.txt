@@ -1,4 +1,4 @@
-tls-client==0.2.1
+curl-cffi>=0.5.7
 requests>=2.31.0
 colorama~=0.4.4
 svglib~=1.4.1
