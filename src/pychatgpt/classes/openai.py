@@ -27,66 +27,6 @@ from colorama import Fore
 
 colorama.init(autoreset=True)
 
-
-def token_expired() -> bool:
-    """
-        Check if the creds have expired
-        returns:
-            bool: True if expired, False if not
-    """
-    try:
-        # Get path using os, it's in ./classes/auth.json
-        path = os.path.dirname(os.path.abspath(__file__))
-        path = os.path.join(path, "auth.json")
-
-        with open(path, 'r') as f:
-            creds = json.load(f)
-            expires_at = float(creds['expires_at'])
-            if time.time() > expires_at + 3600:
-                return True
-            else:
-                return False
-    except KeyError:
-        return True
-    except FileNotFoundError:
-        return True
-
-
-def get_access_token() -> Tuple[str or None, str or None]:
-    """
-        Get the access token
-        returns:
-            str: The access token
-    """
-    try:
-        # Get path using os, it's in ./Classes/auth.json
-        path = os.path.dirname(os.path.abspath(__file__))
-        path = os.path.join(path, "auth.json")
-
-        with open(path, 'r') as f:
-            creds = json.load(f)
-            return creds['access_token'], creds['expires_at']
-    except FileNotFoundError:
-        return None, None
-
-def get_session() -> dict:
-    """
-        Get session
-        returns:
-            dict: Session dict
-    """
-    try:
-        # Get path using os, it's in ./Classes/auth.json
-        path = os.path.dirname(os.path.abspath(__file__))
-        path = os.path.join(path, "session.json")
-
-        with open(path, 'r') as f:
-            session = json.load(f)
-            return session
-    except FileNotFoundError:
-        return None
-
-
 class Auth:
     def __init__(self, email_address: str, password: str, proxy: str = None):
         self.email_address = email_address
@@ -299,56 +239,22 @@ class Auth:
             print(f"{Fore.GREEN}[OpenAI][8] {Fore.WHITE}All good")
             res = self.__session.get(response.redirect_url, impersonate="chrome110", allow_redirects=True)
             if res.status_code == 200:
-                self.save_session({"__Secure-next-auth.session-token": self.__session.cookies.get("__Secure-next-auth.session-token")})
+                expired_date = None
+                for cookie in self.__session.cookies.jar:
+                    if cookie.name == "__Secure-next-auth.session-token":
+                        expired_date = cookie.expires
+                        break
+                print(expired_date)
+                self.save_session({
+                        "__Secure-next-auth.session-token": {
+                            "value": self.__session.cookies.get("__Secure-next-auth.session-token", domain="chat.openai.com"),
+                            "expires": expired_date
+                        } 
+                })
             else:
                 print(f"{Fore.GREEN}[OpenAI][8][CRITICAL] {Fore.WHITE}Access Token: {Fore.RED}Not found"
                       f" Auth0 did not issue an access token.")
-            self.part_nine()
 
-    def part_nine(self):
-        print(f"{Fore.GREEN}[OpenAI][9] {Fore.WHITE}"
-              f"Attempting to get access token from: https://chat.openai.com/api/auth/session")
-        url = "https://chat.openai.com/api/auth/session"
-        a = self.__session.cookies
-        print(self.__session.cookies)
-        response = self.__session.get(url, impersonate="chrome110")
-        is_200 = response.status_code == 200
-        if is_200:
-            print(f"{Fore.GREEN}[OpenAI][9] {Fore.GREEN}Request was successful")
-            if 'json' in response.headers['Content-Type']:
-                json_response = response.json()
-                access_token = json_response['accessToken']
-                print(f"{Fore.GREEN}[OpenAI][9] {Fore.WHITE}Access Token: {Fore.GREEN}{access_token}")
-                self.save_access_token(access_token=access_token)
-            else:
-                print(f"{Fore.GREEN}[OpenAI][9] {Fore.WHITE}Access Token: {Fore.RED}Not found, "
-                      f"Please try again with a proxy (or use a new proxy if you are using one)")
-        else:
-            print(f"{Fore.GREEN}[OpenAI][9] {Fore.WHITE}Access Token: {Fore.RED}Not found, "
-                  f"Please try again with a proxy (or use a new proxy if you are using one)")
-
-    @staticmethod
-    def save_access_token(access_token: str, expiry: int or None = None):
-        """
-        Save access_token and an hour from now on CHATGPT_ACCESS_TOKEN CHATGPT_ACCESS_TOKEN_EXPIRY environment variables
-        :param expiry:
-        :param access_token:
-        :return:
-        """
-        try:
-            print(f"{Fore.GREEN}[OpenAI][9] {Fore.WHITE}Saving access token...")
-            expiry = expiry or int(time.time()) + 3600
-
-            # Get path using os, it's in ./classes/auth.json
-            path = os.path.dirname(os.path.abspath(__file__))
-            path = os.path.join(path, "auth.json")
-            with open(path, "w") as f:
-                f.write(json.dumps({"access_token": access_token, "expires_at": expiry}))
-
-            print(f"{Fore.GREEN}[OpenAI][8] {Fore.WHITE}Saved access token")
-        except Exception as e:
-            raise e
-        
     @staticmethod
     def save_session(session: dict):
         try:
@@ -362,3 +268,39 @@ class Auth:
         except Exception as e:
             raise e
 
+    @staticmethod
+    def get_session() -> dict:
+        """
+            Get session
+            returns:
+                dict: Session dict
+        """
+        try:
+            # Get path using os, it's in ./Classes/auth.json
+            path = os.path.dirname(os.path.abspath(__file__))
+            path = os.path.join(path, "session.json")
+
+            with open(path, 'r') as f:
+                session = json.load(f)
+                return session
+        except FileNotFoundError:
+            return None
+        
+    @staticmethod
+    def session_expired() -> dict:
+        try:
+        # Get path using os, it's in ./classes/auth.json
+            path = os.path.dirname(os.path.abspath(__file__))
+            path = os.path.join(path, "session.json")
+
+            with open(path, 'r') as f:
+                creds = json.load(f)
+                expires_at = float(creds['__Secure-next-auth.session-token'].get("expires"))
+                if time.time() > expires_at:
+                    return True
+                else:
+                    return False
+        except KeyError:
+            return True
+        except FileNotFoundError:
+            return True

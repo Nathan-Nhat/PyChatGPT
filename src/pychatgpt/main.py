@@ -49,8 +49,6 @@ class Chat:
         self.conversation_id = conversation_id
         self.previous_convo_id = previous_convo_id
 
-        self.__auth_access_token: str or None = None
-        self.__auth_access_token_expiry: int or None = None
         self.__chat_history: list or None = None
 
         self._setup()
@@ -139,31 +137,29 @@ class Chat:
                 raise Exceptions.PyChatGPTException("When resuming a chat, there was an issue reading id_log, make sure that it is formatted correctly.")
 
         # Check for access_token & access_token_expiry in env
-        if OpenAI.token_expired():
+        if OpenAI.Auth.session_expired():
             self.log(f"{Fore.RED}>> Access Token missing or expired."
                   f" {Fore.GREEN}Attempting to create them...")
-            self._create_access_token()
+            self._create_session_token()
         else:
-            access_token, expiry = OpenAI.get_access_token()
-            self.__auth_access_token = access_token
-            self.__auth_access_token_expiry = expiry
+            session = OpenAI.Auth.get_session().get("__Secure-next-auth.session-token")
 
             try:
-                self.__auth_access_token_expiry = int(self.__auth_access_token_expiry)
+                session_expiry = int(session.get("expires"))
             except ValueError:
                 self.log(f"{Fore.RED}>> Expiry is not an integer.")
                 raise Exceptions.PyChatGPTException("Expiry is not an integer.")
 
-            if self.__auth_access_token_expiry < time.time():
-                self.log(f"{Fore.RED}>> Your access token is expired. {Fore.GREEN}Attempting to recreate it...")
-                self._create_access_token()
+            if session_expiry < time.time():
+                self.log(f"{Fore.RED}>> Your session token is expired. {Fore.GREEN}Attempting to recreate it...")
+                self._create_session_token()
 
-    def _create_access_token(self) -> bool:
+    def _create_session_token(self) -> bool:
         openai_auth = OpenAI.Auth(email_address=self.email, password=self.password, proxy=self.options.proxies)
         openai_auth.create_token()
 
         # If after creating the token, it's still expired, then something went wrong.
-        is_still_expired = OpenAI.token_expired()
+        is_still_expired = OpenAI.Auth.session_expired()
         if is_still_expired:
             self.log(f"{Fore.RED}>> Failed to create access token.")
             return False
@@ -191,17 +187,14 @@ class Chat:
             raise Exceptions.PyChatGPTException("Cannot enter a non-queue object as the response queue for threads.")
 
         # Check if the access token is expired
-        if OpenAI.token_expired():
-            self.log(f"{Fore.RED}>> Your access token is expired. {Fore.GREEN}Attempting to recreate it...")
-            did_create = self._create_access_token()
+        if OpenAI.Auth.session_expired():
+            self.log(f"{Fore.RED}>> Your session token is expired. {Fore.GREEN}Attempting to recreate it...")
+            did_create = self._create_session_token()
             if did_create:
-                self.log(f"{Fore.GREEN}>> Successfully recreated access token.")
+                self.log(f"{Fore.GREEN}>> Successfully recreated session token.")
             else:
-                self.log(f"{Fore.RED}>> Failed to recreate access token.")
-                raise Exceptions.PyChatGPTException("Failed to recreate access token.")
-
-        # Get access token
-        access_token = OpenAI.get_access_token()
+                self.log(f"{Fore.RED}>> Failed to recreate session token.")
+                raise Exceptions.PyChatGPTException("Failed to recreate session token.")
 
         # Set conversation IDs if supplied
         if previous_convo_id is not None:
@@ -209,7 +202,7 @@ class Chat:
         if conversation_id is not None:
             self.conversation_id = conversation_id
 
-        answer,  previous_convo, convo_id = ChatHandler.ask(auth_token=access_token, prompt=prompt,
+        answer,  previous_convo, convo_id = ChatHandler.ask(prompt=prompt,
                                                            conversation_id=self.conversation_id,
                                                            previous_convo_id=self.previous_convo_id,
                                                            proxies=self.options.proxies,
@@ -249,71 +242,6 @@ class Chat:
                       f"{ex}")
             finally:
                 self.__chat_history = []
-
-    def cli_chat(self, rep_queue: Queue or None = None):
-        """
-        Start a CLI chat session.
-        :param rep_queue:  A queue to put the prompt and response in.
-        :return:
-        """
-        if rep_queue is not None and not isinstance(rep_queue, Queue):
-            self.log(f"{Fore.RED}>> Entered a non-queue object to hold responses for another thread.")
-            raise Exceptions.PyChatGPTException("Cannot enter a non-queue object as the response queue for threads.")
-
-        # Check if the access token is expired
-        if OpenAI.token_expired():
-            self.log(f"{Fore.RED}>> Your access token is expired. {Fore.GREEN}Attempting to recreate it...")
-            did_create = self._create_access_token()
-            if did_create:
-                self.log(f"{Fore.GREEN}>> Successfully recreated access token.")
-            else:
-                self.log(f"{Fore.RED}>> Failed to recreate access token.")
-                raise Exceptions.PyChatGPTException("Failed to recreate access token.")
-        else:
-            self.log(f"{Fore.GREEN}>> Access token is valid.")
-            self.log(f"{Fore.GREEN}>> Starting CLI chat session...")
-            self.log(f"{Fore.GREEN}>> Type 'exit' to exit the chat session.")
-
-
-        # Get access token
-        access_token = OpenAI.get_access_token()
-
-        while True:
-            try:
-                prompt = input("You: ")
-                if prompt.replace("You: ", "") == "exit":
-                    self.save_data()
-                    break
-
-                spinner = Spinner.Spinner()
-                spinner.start(Fore.YELLOW + "Chat GPT is typing...")
-                answer, previous_convo, convo_id = ChatHandler.ask(auth_token=access_token, prompt=prompt,
-                                                                   conversation_id=self.conversation_id,
-                                                                   previous_convo_id=self.previous_convo_id,
-                                                                   proxies=self.options.proxies,
-                                                                   pass_moderation=self.options.pass_moderation)
-
-                if rep_queue is not None:
-                    rep_queue.put((prompt, answer))
-
-                if answer == "400" or answer == "401":
-                    self.log(f"{Fore.RED}>> Failed to get a response from the API.")
-                    return None
-
-                self.conversation_id = convo_id
-                self.previous_convo_id = previous_convo
-                spinner.stop()
-                print(f"Chat GPT: {answer}")
-
-                if self.options.track:
-                    self.__chat_history.append("You: " + prompt)
-                    self.__chat_history.append("Chat GPT: " + answer)
-
-            except KeyboardInterrupt:
-                print(f"{Fore.RED}>> Exiting...")
-                break
-            finally:
-                self.save_data()
 
 if __name__ == "__main__":
     options = Options()

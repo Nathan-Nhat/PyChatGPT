@@ -6,13 +6,14 @@ import threading
 import uuid
 from typing import Tuple, Any
 import time
-from .openai import get_session
+from .openai import Auth
 
 # Requests
 from curl_cffi import requests
 
 # Local
 from . import headers as Headers
+from colorama import Fore
 
 # Colorama
 import colorama
@@ -50,16 +51,38 @@ def __pass_mo(access_token: str, text: str):
                 #  hooks={'response': _called},
                 impersonate="chrome110",
                  data=payload)
+    
+def get_access_token():
+    print(f"{Fore.GREEN}[OpenAI][9] {Fore.WHITE}"
+          f"Attempting to get access token from: https://chat.openai.com/api/auth/session")
+    url = "https://chat.openai.com/api/auth/session"
+    session_dict = Auth.get_session()
+    for key, item in session_dict.items():
+        session.cookies.set(key, item.get("value"))
+    response = session.get(url, impersonate="chrome110")
+    is_200 = response.status_code == 200
+    if is_200:
+        print(f"{Fore.GREEN}[OpenAI][9] {Fore.GREEN}Request was successful")
+        if 'json' in response.headers['Content-Type']:
+            json_response = response.json()
+            access_token = json_response['accessToken']
+            print(f"{Fore.GREEN}[OpenAI][9] {Fore.WHITE}Access Token: {Fore.GREEN}{access_token}")
+            return access_token
+        else:
+            print(f"{Fore.GREEN}[OpenAI][9] {Fore.WHITE}Access Token: {Fore.RED}Not found, "
+                  f"Please try again with a proxy (or use a new proxy if you are using one)")
+    else:
+        print(f"{Fore.GREEN}[OpenAI][9] {Fore.WHITE}Access Token: {Fore.RED}Not found, "
+              f"Please try again with a proxy (or use a new proxy if you are using one)")
 
 def ask(
-        auth_token: Tuple,
         prompt: str,
         conversation_id: str or None,
         previous_convo_id: str or None,
         proxies: str or dict or None,
         pass_moderation: bool = False,
 ) -> Tuple[Any, str or None, str or None]:
-    auth_token, expiry = auth_token
+    auth_token = get_access_token()
     headers = {
         'content-Type': 'application/json',
         'authorization': f'Bearer {auth_token}',
@@ -95,12 +118,8 @@ def ask(
     if conversation_id:
         data["conversation_id"] = conversation_id
     try:
-        session_dict = get_session()
-        for key, item in session_dict.items():
-            session.cookies.set(key, item, domain="chat.openapi.com")
         options = {
             "data": json.dumps(data),
-            "cookies": session_dict,
             "impersonate": "chrome110",
             "headers": headers,
         }
