@@ -247,7 +247,7 @@ class Auth:
                 print(expired_date)
                 self.save_session({
                         "__Secure-next-auth.session-token": {
-                            "value": self.__session.cookies.get("__Secure-next-auth.session-token", domain="chat.openai.com"),
+                            "value": self.__session.cookies.get("__Secure-next-auth.session-token"),
                             "expires": expired_date
                         } 
                 })

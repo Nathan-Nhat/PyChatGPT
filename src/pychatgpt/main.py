@@ -36,6 +36,8 @@ class Options:
                f"chat_log={self.chat_log} id_log={self.id_log}>"
 
 class Chat:
+    auth_handler = OpenAI.Auth
+
     def __init__(self,
                  email: str,
                  password: str,
@@ -137,12 +139,12 @@ class Chat:
                 raise Exceptions.PyChatGPTException("When resuming a chat, there was an issue reading id_log, make sure that it is formatted correctly.")
 
         # Check for access_token & access_token_expiry in env
-        if OpenAI.Auth.session_expired():
+        if self.auth_handler.session_expired():
             self.log(f"{Fore.RED}>> Access Token missing or expired."
                   f" {Fore.GREEN}Attempting to create them...")
             self._create_session_token()
         else:
-            session = OpenAI.Auth.get_session().get("__Secure-next-auth.session-token")
+            session = self.auth_handler.get_session().get("__Secure-next-auth.session-token")
 
             try:
                 session_expiry = int(session.get("expires"))
@@ -155,11 +157,11 @@ class Chat:
                 self._create_session_token()
 
     def _create_session_token(self) -> bool:
-        openai_auth = OpenAI.Auth(email_address=self.email, password=self.password, proxy=self.options.proxies)
+        openai_auth = self.auth_handler(email_address=self.email, password=self.password, proxy=self.options.proxies)
         openai_auth.create_token()
 
         # If after creating the token, it's still expired, then something went wrong.
-        is_still_expired = OpenAI.Auth.session_expired()
+        is_still_expired = self.auth_handler.session_expired()
         if is_still_expired:
             self.log(f"{Fore.RED}>> Failed to create access token.")
             return False
@@ -187,7 +189,7 @@ class Chat:
             raise Exceptions.PyChatGPTException("Cannot enter a non-queue object as the response queue for threads.")
 
         # Check if the access token is expired
-        if OpenAI.Auth.session_expired():
+        if self.auth_handler.session_expired():
             self.log(f"{Fore.RED}>> Your session token is expired. {Fore.GREEN}Attempting to recreate it...")
             did_create = self._create_session_token()
             if did_create:
