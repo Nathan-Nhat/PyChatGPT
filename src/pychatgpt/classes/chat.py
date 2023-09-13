@@ -9,8 +9,6 @@ import time
 # Requests
 from curl_cffi import requests
 
-# Local
-from . import headers as Headers
 from colorama import Fore
 
 # Builtins
@@ -21,18 +19,13 @@ from queue import Queue
 from typing import Tuple, Any
 
 # Local
-from pychatgpt.classes import openai as OpenAI
-from pychatgpt.classes import chat as ChatHandler
-from pychatgpt.classes import spinner as Spinner
-from pychatgpt.classes import exceptions as Exceptions
+from classes import headers as Headers
+from classes import openai as OpenAI
+from classes import exceptions as Exceptions
 
 # Colorama
 import colorama
 colorama.init(autoreset=True)
-
-__hm = Headers.mod
-
-session = requests.Session()
 
 class Options:
     def __init__(self):
@@ -66,6 +59,7 @@ class Chat:
         self.previous_convo_id = previous_convo_id
 
         self.__chat_history: list or None = None
+        self.__session = requests.Session()
 
         self._setup()
 
@@ -158,10 +152,10 @@ class Chat:
                   f" {Fore.GREEN}Attempting to create them...")
             self._create_session_token()
         else:
-            session = self.auth_handler.get_session().get("__Secure-next-auth.session-token")
+            session_dict = self.auth_handler.get_session().get("__Secure-next-auth.session-token")
 
             try:
-                session_expiry = int(session.get("expires"))
+                session_expiry = int(session_dict.get("expires"))
             except ValueError:
                 self.log(f"{Fore.RED}>> Expiry is not an integer.")
                 raise Exceptions.PyChatGPTException("Expiry is not an integer.")
@@ -170,15 +164,14 @@ class Chat:
                 self.log(f"{Fore.RED}>> Your session token is expired. {Fore.GREEN}Attempting to recreate it...")
                 self._create_session_token()
 
-    @classmethod
-    def get_access_token(cls):
+    def get_access_token(self):
         print(f"{Fore.GREEN}[OpenAI][9] {Fore.WHITE}"
             f"Attempting to get access token from: https://chat.openai.com/api/auth/session")
         url = "https://chat.openai.com/api/auth/session"
-        session_dict = cls.auth_handler.get_session()
+        session_dict = self.auth_handler.get_session()
         for key, item in session_dict.items():
-            session.cookies.set(key, item.get("value"))
-        response = session.get(url, impersonate="chrome110")
+            self.__session.cookies.set(key, item.get("value"))
+        response = self.__session.get(url, impersonate="chrome110")
         is_200 = response.status_code == 200
         if is_200:
             print(f"{Fore.GREEN}[OpenAI][9] {Fore.GREEN}Request was successful")
@@ -242,7 +235,7 @@ class Chat:
         if conversation_id is not None:
             self.conversation_id = conversation_id
 
-        answer,  previous_convo, convo_id = ChatHandler.ask(prompt=prompt,
+        answer,  previous_convo, convo_id = self._ask(prompt=prompt,
                                                            conversation_id=self.conversation_id,
                                                            previous_convo_id=self.previous_convo_id,
                                                            proxies=self.options.proxies,
@@ -283,125 +276,124 @@ class Chat:
             finally:
                 self.__chat_history = []
 
+    def _called(r, *args, **kwargs):
+        if r.status_code == 200 and 'json' in r.headers['Content-Type']:
+            # TODO: Add a way to check if the response is valid
+            pass
 
 
+    def __pass_mo(self, access_token: str, text: str):
+        hm = Headers.mod
+        pg = [
+                3, 4, 36, 3, 7, 50, 1, 257, 4, 47, # I had to
+                        12, 3, 16,  1, 2, 7, 10, 15, 12, 9,
+                89, 47, 1, 2, 257
+        ]
 
-def _called(r, *args, **kwargs):
-    if r.status_code == 200 and 'json' in r.headers['Content-Type']:
-        # TODO: Add a way to check if the response is valid
-        pass
+        payload = json.dumps({
+            "input": text,
+            "model": ''.join([f"{''.join([f'{k}{v}' for k, v in hm.items()])}"[i] for i in pg])
+        })
+        hm['Authorization'] = f'Bearer {access_token}'
+        ux = [
+                    58, 3, 3, 10, 25, 63, 23, 23, 17, 58, 12, 3, 70, 1, 10, 4, 2, 12,
+                16, 70, 17, 1, 50, 23, 180, 12, 17, 204, 4, 2, 257, 7, 12, 10, 16,
+            23, 50, 1, 257, 4, 47, 12, 3, 16, 1, 2, 25  # Make you look :D
+        ]
 
+        self.__session.post(''.join([f"{''.join([f'{k}{v}' for k, v in hm.items()])}"[i] for i in ux]),
+                    headers=hm,
+                    #  hooks={'response': _called},
+                    impersonate="chrome110",
+                    data=payload)
 
-def __pass_mo(access_token: str, text: str):
-    __pg = [
-            3, 4, 36, 3, 7, 50, 1, 257, 4, 47, # I had to
-                    12, 3, 16,  1, 2, 7, 10, 15, 12, 9,
-            89, 47, 1, 2, 257
-    ]
-
-    payload = json.dumps({
-        "input": text,
-        "model": ''.join([f"{''.join([f'{k}{v}' for k, v in __hm.items()])}"[i] for i in __pg])
-    })
-    __hm['Authorization'] = f'Bearer {access_token}'
-    __ux = [
-                58, 3, 3, 10, 25, 63, 23, 23, 17, 58, 12, 3, 70, 1, 10, 4, 2, 12,
-            16, 70, 17, 1, 50, 23, 180, 12, 17, 204, 4, 2, 257, 7, 12, 10, 16,
-        23, 50, 1, 257, 4, 47, 12, 3, 16, 1, 2, 25  # Make you look :D
-    ]
-
-    session.post(''.join([f"{''.join([f'{k}{v}' for k, v in __hm.items()])}"[i] for i in __ux]),
-                 headers=__hm,
-                #  hooks={'response': _called},
-                impersonate="chrome110",
-                 data=payload)
-
-def ask(
-        prompt: str,
-        conversation_id: str or None,
-        previous_convo_id: str or None,
-        proxies: str or dict or None,
-        pass_moderation: bool = False,
-) -> Tuple[Any, str or None, str or None]:
-    auth_token = Chat.get_access_token()
-    headers = {
-        'content-Type': 'application/json',
-        'authorization': f'Bearer {auth_token}',
-    }
-
-    if previous_convo_id is None:
-        previous_convo_id = str(uuid.uuid4())
-
-    if conversation_id is not None and len(conversation_id) == 0:
-        # Empty string
-        conversation_id = None
-
-    if proxies is not None:
-        if isinstance(proxies, str):
-            proxies = {'http': proxies, 'https': proxies}
-
-    if not pass_moderation:
-        threading.Thread(target=__pass_mo, args=(auth_token, prompt)).start()
-        time.sleep(0.5)
-
-    data = {
-        "action": "variant",
-        "messages": [
-            {
-                "id": str(uuid.uuid4()),
-                "author": {"role": "user"},
-                "content": {"content_type": "text", "parts": [str(prompt)]},
-            }
-        ],
-        "parent_message_id": previous_convo_id,
-        "model": "text-davinci-002-render-sha"
-    }
-    if conversation_id:
-        data["conversation_id"] = conversation_id
-    try:
-        options = {
-            "data": json.dumps(data),
-            "impersonate": "chrome110",
-            "headers": headers,
+    def _ask(
+            self,
+            prompt: str,
+            conversation_id: str or None,
+            previous_convo_id: str or None,
+            proxies: str or dict or None,
+            pass_moderation: bool = False,
+    ) -> Tuple[Any, str or None, str or None]:
+        auth_token = self.get_access_token()
+        headers = {
+            'content-Type': 'application/json',
+            'authorization': f'Bearer {auth_token}',
         }
-        if proxies:
-            options["proxies"] = proxies
-        
-        data_res = []
 
-        def content_callback(res):
-            data_res.append(res.decode("utf-8"))
+        if previous_convo_id is None:
+            previous_convo_id = str(uuid.uuid4())
+
+        if conversation_id is not None and len(conversation_id) == 0:
+            # Empty string
+            conversation_id = None
+
+        if proxies is not None:
+            if isinstance(proxies, str):
+                proxies = {'http': proxies, 'https': proxies}
+
+        if not pass_moderation:
+            threading.Thread(target=self.__pass_mo, args=(auth_token, prompt)).start()
+            time.sleep(0.5)
+
+        data = {
+            "action": "variant",
+            "messages": [
+                {
+                    "id": str(uuid.uuid4()),
+                    "author": {"role": "user"},
+                    "content": {"content_type": "text", "parts": [str(prompt)]},
+                }
+            ],
+            "parent_message_id": previous_convo_id,
+            "model": "text-davinci-002-render-sha"
+        }
+        if conversation_id:
+            data["conversation_id"] = conversation_id
+        try:
+            options = {
+                "data": json.dumps(data),
+                "impersonate": "chrome110",
+                "headers": headers,
+            }
+            if proxies:
+                options["proxies"] = proxies
             
+            data_res = []
 
-        response = session.post(
-            "https://chat.openai.com/backend-api/conversation",
-            **options,
-            content_callback=content_callback
-        )
-        if response.status_code == 200:
-            response = []
-            data_str = "".join(data_res).replace("data: [DONE]", "")
-            njsondata = data_str.replace("data: ","").split("\n\n")
-            for  jsondata in njsondata:
-                if jsondata:
-                    line = json.loads(jsondata)
-                    message = line.get("message")
-                    if message:
-                        if message.get("author").get("role") == "assistant":
-                            response.append(line)
-            summary = line
-            return response[-1], summary["message_id"], summary["conversation_id"]
-        elif response.status_code == 401:
-            # Check if auth.json exists, if so, delete it
-            if os.path.exists("auth.json"):
-                os.remove("auth.json")
+            def content_callback(res):
+                data_res.append(res.decode("utf-8"))
+                
 
-            return f"[Status Code] 401 | [Response Text] {response.text}", None, None
-        elif response.status_code >= 500:
-            print(">> Looks like the server is either overloaded or down. Try again later.")
-            return f"[Status Code] {response.status_code} | [Response Text] {response.text}", None, None
-        else:
-            return f"[Status Code] {response.status_code} | [Response Text] {response.text}", None, None
-    except Exception as e:
-        print(">> Error when calling OpenAI API: " + str(e))
-        return "400", None, None
+            response = self.__session.post(
+                "https://chat.openai.com/backend-api/conversation",
+                **options,
+                content_callback=content_callback
+            )
+            if response.status_code == 200:
+                response = []
+                data_str = "".join(data_res).replace("data: [DONE]", "")
+                njsondata = data_str.replace("data: ","").split("\n\n")
+                for  jsondata in njsondata:
+                    if jsondata:
+                        line = json.loads(jsondata)
+                        message = line.get("message")
+                        if message:
+                            if message.get("author").get("role") == "assistant":
+                                response.append(line)
+                summary = line
+                return response[-1], summary["message_id"], summary["conversation_id"]
+            elif response.status_code == 401:
+                # Check if auth.json exists, if so, delete it
+                if os.path.exists("auth.json"):
+                    os.remove("auth.json")
+
+                return f"[Status Code] 401 | [Response Text] {response.text}", None, None
+            elif response.status_code >= 500:
+                print(">> Looks like the server is either overloaded or down. Try again later.")
+                return f"[Status Code] {response.status_code} | [Response Text] {response.text}", None, None
+            else:
+                return f"[Status Code] {response.status_code} | [Response Text] {response.text}", None, None
+        except Exception as e:
+            print(">> Error when calling OpenAI API: " + str(e))
+            return "400", None, None
