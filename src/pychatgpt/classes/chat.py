@@ -375,15 +375,8 @@ class Chat:
                 data_str = "".join(data_res).replace("data: [DONE]", "")
                 self.log(f"{Fore.GREEN}{data_str}")
                 njsondata = data_str.replace("data: ","").split("\n\n")
-                for  jsondata in njsondata:
-                    if jsondata:
-                        line = json.loads(jsondata)
-                        message = line.get("message")
-                        if message:
-                            if message.get("author").get("role") == "assistant":
-                                response.append(line)
-                summary = line
-                return response[-1], summary["message_id"], summary["conversation_id"]
+                response = json.loads(njsondata[-2])
+                return response, response["message"]["id"], response["conversation_id"]
             elif response.status_code == 401:
                 # Check if auth.json exists, if so, delete it
                 if os.path.exists("auth.json"):
