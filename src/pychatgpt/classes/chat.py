@@ -375,7 +375,7 @@ class Chat:
                 data_str = "".join(data_res).replace("data: [DONE]", "")
                 self.log(f"{Fore.GREEN}{data_str}")
                 njsondata = data_str.replace("data: ","").split("\n\n")
-                response = json.loads(njsondata[-2])
+                response = json.loads(njsondata[-4])
                 return response, response["message"]["id"], response["conversation_id"]
             elif response.status_code == 401:
                 # Check if auth.json exists, if so, delete it
