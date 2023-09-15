@@ -409,7 +409,7 @@ class Chat:
             )
             if res.status_code != 200:
                 print(f"Error code stream: {res.status_code}")
-                res_queue.put("\n\n")
+                res_queue.put(b"\n\n")
                 raise Exception("Error when streaming data")
 
         task = Thread(target=handle_task)
@@ -418,7 +418,7 @@ class Chat:
         while True:
             next_res = res_queue.get()
             next_res_str = next_res.decode()
-            if b"[DONE]" in next_res:
+            if b"[DONE]" in next_res or next_res == "\n\n":
                 yield next_res
                 break
             if next_res_str.endswith("\n\n") and next_res_str.startswith("data: "):
