@@ -5,7 +5,7 @@ import threading
 import uuid
 from typing import Tuple, Any
 import time
-
+from threading import Thread 
 # Requests
 from curl_cffi import requests
 
@@ -200,24 +200,22 @@ class Chat:
         # If created, then return True
         return True
 
-    def ask(self, prompt: str,
+    def ask(self, messages: list,
+            stream: bool = False,
+            model: str = "gpt-3.5-turbo",
             previous_convo_id: str or None = None,
             conversation_id: str or None = None,
-            rep_queue: Queue or None = None
-            ) -> Tuple[Any, None or str, None or str]:
+            ) -> Any:
 
-        if prompt is None:
-            self.log(f"{Fore.RED}>> Enter a prompt.")
-            raise Exceptions.PyChatGPTException("Enter a prompt.")
+        if messages is None:
+            self.log(f"{Fore.RED}>> Enter messages.")
+            raise Exceptions.PyChatGPTException("Enter messages.")
 
-        if not isinstance(prompt, str):
-            raise Exceptions.PyChatGPTException("Prompt must be a string.")
+        if not isinstance(messages, list):
+            raise Exceptions.PyChatGPTException("Message must be a list.")
 
-        if len(prompt) == 0:
-            raise Exceptions.PyChatGPTException("Prompt cannot be empty.")
-
-        if rep_queue is not None and not isinstance(rep_queue, Queue):
-            raise Exceptions.PyChatGPTException("Cannot enter a non-queue object as the response queue for threads.")
+        if len(messages) == 0:
+            raise Exceptions.PyChatGPTException("Messages cannot be empty.")
 
         # Check if the access token is expired
         if self.auth_handler.session_expired():
@@ -235,28 +233,24 @@ class Chat:
         if conversation_id is not None:
             self.conversation_id = conversation_id
 
-        answer,  previous_convo, convo_id = self._ask(prompt=prompt,
-                                                           conversation_id=self.conversation_id,
+        answer = self._ask(messages=messages,
+                                                           model=model,
+                                                           stream=stream,
+                                                            conversation_id=self.conversation_id,
                                                            previous_convo_id=self.previous_convo_id,
                                                            proxies=self.options.proxies,
                                                            pass_moderation=self.options.pass_moderation)
 
-        if rep_queue is not None:
-            rep_queue.put((prompt, answer))
-
         if answer == "400" or answer == "401":
             self.log(f"{Fore.RED}>> Failed to get a response from the API.")
             return None
-        
-        self.conversation_id = convo_id
-        self.previous_convo_id = previous_convo
 
         if self.options.track:
-            self.__chat_history.append("You: " + prompt)
+            self.__chat_history.append("You: " + messages)
             self.__chat_history.append("Chat GPT: " + answer)
             self.save_data()
 
-        return answer, previous_convo, convo_id
+        return answer
 
     def save_data(self):
         if self.options.track:
@@ -309,12 +303,14 @@ class Chat:
 
     def _ask(
             self,
-            prompt: str,
+            messages: list,
+            model: str,
+            stream: bool,
             conversation_id: str or None,
             previous_convo_id: str or None,
             proxies: str or dict or None,
             pass_moderation: bool = False,
-    ) -> Tuple[Any, str or None, str or None]:
+    ) -> Any:
         auth_token = self.get_access_token()
         headers = {
             'content-Type': 'application/json',
@@ -333,20 +329,22 @@ class Chat:
                 proxies = {'http': proxies, 'https': proxies}
 
         if not pass_moderation:
-            threading.Thread(target=self.__pass_mo, args=(auth_token, prompt)).start()
+            threading.Thread(target=self.__pass_mo, args=(auth_token, messages)).start()
             time.sleep(0.5)
+        message_data = [
+            {
+                 "id": str(uuid.uuid4()),
+                  "author": {"role": message.get("role")},
+                  "content": {"content_type": "text", "parts": [message.get("content")]},
+            }
+            for message in messages
+        ]
 
         data = {
-            "action": "variant",
-            "messages": [
-                {
-                    "id": str(uuid.uuid4()),
-                    "author": {"role": "user"},
-                    "content": {"content_type": "text", "parts": [str(prompt)]},
-                }
-            ],
+            "action": "next",
+            "messages": message_data,
             "parent_message_id": previous_convo_id,
-            "model": "text-davinci-002-render-sha"
+            "model": model
         }
         if conversation_id:
             data["conversation_id"] = conversation_id
@@ -359,35 +357,45 @@ class Chat:
             if proxies:
                 options["proxies"] = proxies
             
-            data_res = []
+            if stream:
+                return self._handle_stream_response(options)
+            else:
+                return self._handle_non_stream_response(options)
+            
+        except Exception as e:
+            print(">> Error when calling OpenAI API: " + str(e))
+            return "500"
 
-            def content_callback(res):
-                data_res.append(res.decode("utf-8"))
-                
+    def _handle_stream_response(self, options: dict):
+        res_queue = Queue()
 
-            response = self.__session.post(
+        def content_callback(res):
+            res_queue.put(res)
+        def handle_task():
+            self.__session.post(
                 "https://chat.openai.com/backend-api/conversation",
                 **options,
                 content_callback=content_callback
             )
-            if response.status_code == 200:
-                response = []
-                data_str = "".join(data_res).replace("data: [DONE]", "")
-                self.log(f"{Fore.GREEN}{data_str}")
-                njsondata = data_str.replace("data: ","").split("\n\n")
-                response = json.loads(njsondata[-4])
-                return response, response["message"]["id"], response["conversation_id"]
-            elif response.status_code == 401:
-                # Check if auth.json exists, if so, delete it
-                if os.path.exists("auth.json"):
-                    os.remove("auth.json")
+        task = Thread(target=handle_task)
+        task.start()
+        while True:
+            next_res = res_queue.get()
+            yield next_res
+            if b"[DONE]" in next_res:
+                break
+        task.join()
 
-                return f"[Status Code] 401 | [Response Text] {response.text}", None, None
-            elif response.status_code >= 500:
-                print(">> Looks like the server is either overloaded or down. Try again later.")
-                return f"[Status Code] {response.status_code} | [Response Text] {response.text}", None, None
-            else:
-                return f"[Status Code] {response.status_code} | [Response Text] {response.text}", None, None
-        except Exception as e:
-            print(">> Error when calling OpenAI API: " + str(e))
-            return "400", None, None
+    def _handle_non_stream_response(self, options: dict):
+        ret = []
+        def content_callback(res):
+            ret.append(res.decode())
+
+        self.__session.post(
+                "https://chat.openai.com/backend-api/conversation",
+                **options,
+                content_callback=content_callback
+            )
+        ret_str = "".join(ret).replace("data: [DONE]", "").replace("data: ", "").split("\n\n")
+        ret_json = json.loads(ret_str[-4])
+        return ret_json
