@@ -60,6 +60,7 @@ class Chat:
 
         self.__chat_history: list or None = None
         self.__session = requests.Session()
+        self.__previous_str = ""
 
         self._setup()
 
@@ -366,6 +367,32 @@ class Chat:
             print(">> Error when calling OpenAI API: " + str(e))
             return "500"
 
+    def convert_to_expected_str(self, text):
+        text = text.replace("data: ", "")
+        ret_text = ""
+        for item in text.split("\n\n"):
+            if item:
+                json_item = json.loads(item)
+                if json_item.get("message") and json_item["message"]["author"]["role"] == "assistant" and json_item["message"]["status"] != "finished_successfully":
+                    message = json_item["message"]["content"]["parts"][0]
+                    delta = message[len(self.__previous_str):]
+                    self.__previous_str = message
+                    data_chat = {
+                            "id": json_item["message"]["id"],
+                            "object": "chat.completion.chunk",
+                            "created": json_item["message"]["create_time"],
+                            "model": "gpt-3.5-turbo",
+                            "choices": [{
+                                "index": 0,
+                                "delta": {
+                                "content": delta,
+                                },
+                                "finish_reason": "null"
+                            }]
+                        }
+                    ret_text += f'data: {json.dumps(data_chat)}\n\n'
+        return ret_text.encode()
+
     async def _handle_stream_response(self, options: dict):
         res_queue = Queue()
 
@@ -379,11 +406,20 @@ class Chat:
             )
         task = Thread(target=handle_task)
         task.start()
+        ret_combine = ""
         while True:
             next_res = res_queue.get()
-            yield next_res
+            next_res_str = next_res.decode()
             if b"[DONE]" in next_res:
+                yield next_res
                 break
+            if next_res_str.endswith("\n\n") and next_res_str.startswith("data: "):
+                yield self.convert_to_expected_str(next_res_str)
+            else:
+                ret_combine = ret_combine + next_res_str
+                if ret_combine.endswith("\n\n") and ret_combine.startswith("data: "):
+                    yield self.convert_to_expected_str(ret_combine)
+                    ret_combine = ""
         task.join()
 
     def _handle_non_stream_response(self, options: dict):
