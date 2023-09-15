@@ -398,6 +398,8 @@ class Chat:
 
         def content_callback(res):
             res_queue.put(res)
+            if bool(int(os.environ.get("DEBUG", "0"))):
+                print(res)
 
         def handle_task():
             res = self.__session.post(
@@ -430,6 +432,8 @@ class Chat:
         ret = []
         def content_callback(res):
             ret.append(res.decode())
+            if bool(int(os.environ.get("DEBUG", "0"))):
+                print(res)
 
         res = self.__session.post(
                 "https://chat.openai.com/backend-api/conversation",
