@@ -408,6 +408,8 @@ class Chat:
                 content_callback=content_callback
             )
             if res.status_code != 200:
+                print(f"Error code stream: {res.status_code}")
+                res_queue.put("\n\n")
                 raise Exception("Error when streaming data")
 
         task = Thread(target=handle_task)
