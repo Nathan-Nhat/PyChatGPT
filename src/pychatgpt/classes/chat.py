@@ -366,7 +366,7 @@ class Chat:
             print(">> Error when calling OpenAI API: " + str(e))
             return "500"
 
-    def _handle_stream_response(self, options: dict):
+    async def _handle_stream_response(self, options: dict):
         res_queue = Queue()
 
         def content_callback(res):
