@@ -365,7 +365,7 @@ class Chat:
             
         except Exception as e:
             print(">> Error when calling OpenAI API: " + str(e))
-            return "500"
+            raise Exception("Error when calling data from OpenAI") from e
 
     def convert_to_expected_str(self, text):
         text = text.replace("data: ", "")
@@ -398,12 +398,16 @@ class Chat:
 
         def content_callback(res):
             res_queue.put(res)
+
         def handle_task():
-            self.__session.post(
+            res = self.__session.post(
                 "https://chat.openai.com/backend-api/conversation",
                 **options,
                 content_callback=content_callback
             )
+            if res.status_code != 200:
+                raise Exception("Error when streaming data")
+
         task = Thread(target=handle_task)
         task.start()
         ret_combine = ""
@@ -427,11 +431,13 @@ class Chat:
         def content_callback(res):
             ret.append(res.decode())
 
-        self.__session.post(
+        res = self.__session.post(
                 "https://chat.openai.com/backend-api/conversation",
                 **options,
                 content_callback=content_callback
             )
+        if res.status_code != 200:
+            raise Exception("Error when getting data")
         ret_str = "".join(ret).replace("data: [DONE]", "").replace("data: ", "").split("\n\n")
         ret_json = json.loads(ret_str[-4])
         return ret_json
