@@ -47,14 +47,13 @@ class ThreadWithHandleException(Thread):
         self.exc = None
         try:
             super().run()
-        except BaseException as e:
+        except Exception as e:
             self.exc = e
 
     def join(self, timeout=None):
         super().join(timeout)
         if self.exc:
             raise self.exc
-        return self.ret
 
 class Chat:
     auth_handler = OpenAI.Auth
@@ -379,7 +378,7 @@ class Chat:
             
         except Exception as e:
             print(">> Error when calling OpenAI API: " + str(e))
-            raise Exception("Error when calling data from OpenAI") from e
+            raise Exceptions.PyChatGPTException(">> Error when calling OpenAI API: " + str(e)) from e
 
     def convert_to_expected_str(self, text):
         text = text.replace("data: ", "")
@@ -412,8 +411,6 @@ class Chat:
 
         def content_callback(res):
             res_queue.put(res)
-            if bool(int(os.environ.get("DEBUG", "0"))):
-                print(res)
 
         def handle_task():
             res = self.__session.post(
@@ -423,8 +420,7 @@ class Chat:
             )
             if res.status_code != 200:
                 print(f"Error code stream: {res.status_code}")
-                res_queue.put(b"\n\n")
-                raise Exception("Error when streaming data")
+                raise Exceptions.PyChatGPTException("Error when getting data: " + str(res.status_code) + " : " + str(res.content))
 
         task = ThreadWithHandleException(target=handle_task)
         task.start()
@@ -442,14 +438,16 @@ class Chat:
                 if ret_combine.endswith("\n\n") and ret_combine.startswith("data: "):
                     yield self.convert_to_expected_str(ret_combine)
                     ret_combine = ""
-        task.join()
+        try:
+            task.join()
+        except Exception as exc:
+            raise Exceptions.PyChatGPTException("Error when getting stream data: " + str(exc))
+
 
     def _handle_non_stream_response(self, options: dict):
         ret = []
         def content_callback(res):
             ret.append(res.decode())
-            if bool(int(os.environ.get("DEBUG", "0"))):
-                print(res)
 
         res = self.__session.post(
                 "https://chat.openai.com/backend-api/conversation",
@@ -457,7 +455,7 @@ class Chat:
                 content_callback=content_callback
             )
         if res.status_code != 200:
-            raise Exception("Error when getting data")
+            raise Exceptions.PyChatGPTException("Error when getting data: " + str(res.status_code) + " : " + str(res.content))
         ret_str = "".join(ret).replace("data: [DONE]", "").replace("data: ", "").split("\n\n")
         ret_json = json.loads(ret_str[-4])
         return ret_json
