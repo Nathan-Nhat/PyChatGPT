@@ -42,6 +42,20 @@ class Options:
                f"verify={self.verify} pass_moderation={self.pass_moderation} " \
                f"chat_log={self.chat_log} id_log={self.id_log}>"
 
+class ThreadWithHandleException(Thread):
+    def run(self):
+        self.exc = None
+        try:
+            super().run()
+        except BaseException as e:
+            self.exc = e
+
+    def join(self, timeout=None):
+        super().join(timeout)
+        if self.exc:
+            raise self.exc
+        return self.ret
+
 class Chat:
     auth_handler = OpenAI.Auth
 
@@ -412,7 +426,7 @@ class Chat:
                 res_queue.put(b"\n\n")
                 raise Exception("Error when streaming data")
 
-        task = Thread(target=handle_task)
+        task = ThreadWithHandleException(target=handle_task)
         task.start()
         ret_combine = ""
         while True:
