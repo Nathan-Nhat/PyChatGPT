@@ -134,7 +134,8 @@ class Chat:
                   f" {Fore.GREEN}Attempting to create them...")
             await self._create_session_token()
         else:
-            session_dict = await self.auth_handler.get_session().get("__Secure-next-auth.session-token")
+            session_dict = await self.auth_handler.get_session()
+            session_dict = session_dict.get("__Secure-next-auth.session-token")
 
             try:
                 session_expiry = int(session_dict.get("expires"))
