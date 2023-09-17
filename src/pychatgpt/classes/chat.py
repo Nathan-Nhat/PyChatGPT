@@ -10,7 +10,7 @@ from threading import Thread
 from curl_cffi import requests
 
 from colorama import Fore
-
+import asyncio
 # Builtins
 import sys
 import time
@@ -71,11 +71,11 @@ class Chat:
         self.conversation_id = conversation_id
         self.previous_convo_id = previous_convo_id
 
-        self.__chat_history: list or None = None
-        self.__session = requests.Session()
+        self.__session = requests.AsyncSession()
         self.__previous_str = ""
 
-        self._setup()
+    async def setup(self):
+        await self._setup()
 
     @staticmethod
     def _create_if_not_exists(file: str):
@@ -87,30 +87,13 @@ class Chat:
         if self.options is not None and self.options.log:
             print(inout, file=sys.stderr)
 
-    def _setup(self):
+    async def _setup(self):
         if self.options is not None:
             # If track is enabled, create the chat log and id log files if they don't exist
             if not isinstance(self.options.track, bool):
                 raise Exceptions.PyChatGPTException("Options to track conversation must be a boolean.")
             if not isinstance(self.options.log, bool):
                 raise Exceptions.PyChatGPTException("Options to log must be a boolean.")
-
-            if self.options.track:
-                if self.options.chat_log is not None:
-                    self._create_if_not_exists(os.path.abspath(self.options.chat_log))
-                    self.options.chat_log = os.path.abspath(self.options.chat_log)
-                else:
-                    # Create a chat log file called chat_log.txt
-                    self.options.chat_log = "chat_log.txt"
-                    self._create_if_not_exists(self.options.chat_log)
-
-                if self.options.id_log is not None:
-                    self._create_if_not_exists(os.path.abspath(self.options.id_log))
-                    self.options.id_log = os.path.abspath(self.options.id_log)
-                else:
-                    # Create a chat log file called id_log.txt
-                    self.options.id_log = "id_log.txt"
-                    self._create_if_not_exists(self.options.id_log)
 
             if self.options.proxies is not None:
                 if not isinstance(self.options.proxies, dict):
@@ -129,7 +112,6 @@ class Chat:
                     raise Exceptions.PyChatGPTException(
                         "When saving a chat, file paths for chat_log and id_log cannot be empty.")
 
-                self.__chat_history = []
         else:
             self.options = Options()
 
@@ -146,27 +128,13 @@ class Chat:
             self.log(f"{Fore.RED}>> Email cannot be empty.")
             raise Exceptions.PyChatGPTException("Email cannot be empty.")
 
-        if self.options is not None and self.options.track:
-            try:
-                with open(self.options.id_log, "r") as f:
-                    # Check if there's any data in the file
-                    if os.path.getsize(self.options.id_log) > 0:
-                        self.previous_convo_id = f.readline().strip()
-                        self.conversation_id = f.readline().strip()
-                    else:
-                        self.conversation_id = None
-            except IOError:
-                raise Exceptions.PyChatGPTException("When resuming a chat, conversation id and previous conversation id in id_log must be separated by newlines.")
-            except Exception:
-                raise Exceptions.PyChatGPTException("When resuming a chat, there was an issue reading id_log, make sure that it is formatted correctly.")
-
         # Check for access_token & access_token_expiry in env
-        if self.auth_handler.session_expired():
+        if await self.auth_handler.session_expired():
             self.log(f"{Fore.RED}>> Access Token missing or expired."
                   f" {Fore.GREEN}Attempting to create them...")
-            self._create_session_token()
+            await self._create_session_token()
         else:
-            session_dict = self.auth_handler.get_session().get("__Secure-next-auth.session-token")
+            session_dict = await self.auth_handler.get_session().get("__Secure-next-auth.session-token")
 
             try:
                 session_expiry = int(session_dict.get("expires"))
@@ -176,16 +144,16 @@ class Chat:
 
             if session_expiry < time.time():
                 self.log(f"{Fore.RED}>> Your session token is expired. {Fore.GREEN}Attempting to recreate it...")
-                self._create_session_token()
+                await self._create_session_token()
 
-    def get_access_token(self):
+    async def get_access_token(self):
         print(f"{Fore.GREEN}[OpenAI][9] {Fore.WHITE}"
             f"Attempting to get access token from: https://chat.openai.com/api/auth/session")
         url = "https://chat.openai.com/api/auth/session"
-        session_dict = self.auth_handler.get_session()
+        session_dict = await self.auth_handler.get_session()
         for key, item in session_dict.items():
             self.__session.cookies.set(key, item.get("value"))
-        response = self.__session.get(url, impersonate="chrome110")
+        response = await self.__session.get(url, impersonate="chrome110")
         is_200 = response.status_code == 200
         if is_200:
             print(f"{Fore.GREEN}[OpenAI][9] {Fore.GREEN}Request was successful")
@@ -201,12 +169,12 @@ class Chat:
             print(f"{Fore.GREEN}[OpenAI][9] {Fore.WHITE}Access Token: {Fore.RED}Not found, "
                 f"Please try again with a proxy (or use a new proxy if you are using one)")
     
-    def _create_session_token(self) -> bool:
+    async def _create_session_token(self) -> bool:
         openai_auth = self.auth_handler(email_address=self.email, password=self.password, proxy=self.options.proxies)
-        openai_auth.create_token()
+        await openai_auth.create_token()
 
         # If after creating the token, it's still expired, then something went wrong.
-        is_still_expired = self.auth_handler.session_expired()
+        is_still_expired = await self.auth_handler.session_expired()
         if is_still_expired:
             self.log(f"{Fore.RED}>> Failed to create access token.")
             return False
@@ -214,83 +182,12 @@ class Chat:
         # If created, then return True
         return True
 
-    def ask(self, messages: list,
-            stream: bool = False,
-            model: str = "gpt-3.5-turbo",
-            previous_convo_id: str or None = None,
-            conversation_id: str or None = None,
-            ) -> Any:
-
-        if messages is None:
-            self.log(f"{Fore.RED}>> Enter messages.")
-            raise Exceptions.PyChatGPTException("Enter messages.")
-
-        if not isinstance(messages, list):
-            raise Exceptions.PyChatGPTException("Message must be a list.")
-
-        if len(messages) == 0:
-            raise Exceptions.PyChatGPTException("Messages cannot be empty.")
-
-        # Check if the access token is expired
-        if self.auth_handler.session_expired():
-            self.log(f"{Fore.RED}>> Your session token is expired. {Fore.GREEN}Attempting to recreate it...")
-            did_create = self._create_session_token()
-            if did_create:
-                self.log(f"{Fore.GREEN}>> Successfully recreated session token.")
-            else:
-                self.log(f"{Fore.RED}>> Failed to recreate session token.")
-                raise Exceptions.PyChatGPTException("Failed to recreate session token.")
-
-        # Set conversation IDs if supplied
-        if previous_convo_id is not None:
-            self.previous_convo_id = previous_convo_id
-        if conversation_id is not None:
-            self.conversation_id = conversation_id
-
-        answer = self._ask(messages=messages,
-                                                           model=model,
-                                                           stream=stream,
-                                                            conversation_id=self.conversation_id,
-                                                           previous_convo_id=self.previous_convo_id,
-                                                           proxies=self.options.proxies,
-                                                           pass_moderation=self.options.pass_moderation)
-
-        if answer == "400" or answer == "401":
-            self.log(f"{Fore.RED}>> Failed to get a response from the API.")
-            return None
-
-        if self.options.track:
-            self.__chat_history.append("You: " + messages)
-            self.__chat_history.append("Chat GPT: " + answer)
-            self.save_data()
-
-        return answer
-
-    def save_data(self):
-        if self.options.track:
-            try:
-                with open(self.options.chat_log, "a") as f:
-                    f.write("\n".join(self.__chat_history) + "\n")
-
-                with open(self.options.id_log, "w") as f:
-                    if self.previous_convo_id:
-                        f.write(str(self.previous_convo_id) + "\n")
-                    if self.conversation_id:
-                        f.write(str(self.conversation_id) + "\n")
-
-            except Exception as ex:
-                self.log(f"{Fore.RED}>> Failed to save chat and ids to chat log and id_log."
-                      f"{ex}")
-            finally:
-                self.__chat_history = []
-
     def _called(r, *args, **kwargs):
         if r.status_code == 200 and 'json' in r.headers['Content-Type']:
             # TODO: Add a way to check if the response is valid
             pass
 
-
-    def __pass_mo(self, access_token: str, text: str):
+    async def __pass_mo(self, access_token: str, text: str):
         hm = Headers.mod
         pg = [
                 3, 4, 36, 3, 7, 50, 1, 257, 4, 47, # I had to
@@ -309,73 +206,99 @@ class Chat:
             23, 50, 1, 257, 4, 47, 12, 3, 16, 1, 2, 25  # Make you look :D
         ]
 
-        self.__session.post(''.join([f"{''.join([f'{k}{v}' for k, v in hm.items()])}"[i] for i in ux]),
+        await self.__session.post(''.join([f"{''.join([f'{k}{v}' for k, v in hm.items()])}"[i] for i in ux]),
                     headers=hm,
                     #  hooks={'response': _called},
                     impersonate="chrome110",
                     data=payload)
-
-    def _ask(
-            self,
+        
+    async def get_options(
+            self, 
             messages: list,
-            model: str,
-            stream: bool,
-            conversation_id: str or None,
-            previous_convo_id: str or None,
-            proxies: str or dict or None,
-            pass_moderation: bool = False,
-    ) -> Any:
-        auth_token = self.get_access_token()
-        headers = {
-            'content-Type': 'application/json',
-            'authorization': f'Bearer {auth_token}',
-        }
-
-        if previous_convo_id is None:
-            previous_convo_id = str(uuid.uuid4())
-
-        if conversation_id is not None and len(conversation_id) == 0:
-            # Empty string
-            conversation_id = None
-
-        if proxies is not None:
-            if isinstance(proxies, str):
-                proxies = {'http': proxies, 'https': proxies}
-
-        if not pass_moderation:
-            threading.Thread(target=self.__pass_mo, args=(auth_token, messages)).start()
-            time.sleep(0.5)
-        message_data = [
-            {
-                 "id": str(uuid.uuid4()),
-                  "author": {"role": message.get("role")},
-                  "content": {"content_type": "text", "parts": [message.get("content")]},
-            }
-            for message in messages
-        ]
-
-        data = {
-            "action": "next",
-            "messages": message_data,
-            "parent_message_id": previous_convo_id,
-            "model": model
-        }
-        if conversation_id:
-            data["conversation_id"] = conversation_id
+            model: str = "gpt-3.5-turbo",
+            previous_convo_id: str or None = None,
+            conversation_id: str or None = None,
+    ):
         try:
-            options = {
-                "data": json.dumps(data),
-                "impersonate": "chrome110",
-                "headers": headers,
+            auth_token = await self.get_access_token()
+            headers = {
+                'content-Type': 'application/json',
+                'authorization': f'Bearer {auth_token}',
             }
+
+            if previous_convo_id is None:
+                previous_convo_id = str(uuid.uuid4())
+
+            if conversation_id is not None and len(conversation_id) == 0:
+                # Empty string
+                conversation_id = None
+            proxies = self.options.proxies
+            if proxies is not None:
+                if isinstance(proxies, str):
+                    proxies = {'http': proxies, 'https': proxies}
+            pass_moderation = self.options.pass_moderation
+            if not pass_moderation:
+                await self.__pass_mo(auth_token, messages)
+            message_data = [
+                {
+                    "id": str(uuid.uuid4()),
+                    "author": {"role": message.get("role")},
+                    "content": {"content_type": "text", "parts": [message.get("content")]},
+                }
+                for message in messages
+            ]
+
+            data = {
+                "action": "next",
+                "messages": message_data,
+                "parent_message_id": previous_convo_id,
+                "model": model
+            }
+            if conversation_id:
+                data["conversation_id"] = conversation_id
+            options = {
+                    "data": json.dumps(data),
+                    "impersonate": "chrome110",
+                    "headers": headers,
+                }
             if proxies:
                 options["proxies"] = proxies
-            
-            if stream:
-                return self._handle_stream_response(options)
-            else:
-                return self._handle_non_stream_response(options)
-            
+            return options
+        except Exception as e:
+            print(">> Error when getting options OpenAI API: " + str(e))
+            raise Exceptions.PyChatGPTException(">> Error when getting options OpenAI API: " + str(e)) from e
+
+    async def ask_stream(
+            self, messages: list,
+            model: str = "gpt-3.5-turbo",
+            previous_convo_id: str or None = None,
+            conversation_id: str or None = None) -> Any:
+        try:
+            options = await self.get_options(
+                messages=messages,
+                model=model,
+                previous_convo_id=previous_convo_id,
+                conversation_id=conversation_id
+            )
+            async for item in self._handle_stream_response(options):
+                    yield item
+        except Exception as e:
+            print(">> Error when calling OpenAI API: " + str(e))
+            raise Exceptions.PyChatGPTException(">> Error when calling OpenAI API: " + str(e)) from e
+
+    async def ask_none_stream(
+            self, messages: list,
+            model: str = "gpt-3.5-turbo",
+            previous_convo_id: str or None = None,
+            conversation_id: str or None = None) -> Any:
+        try:
+            options = await self.get_options(
+                messages=messages,
+                model=model,
+                previous_convo_id=previous_convo_id,
+                conversation_id=conversation_id
+            )
+            return await self._handle_non_stream_response(options)
         except Exception as e:
             print(">> Error when calling OpenAI API: " + str(e))
             raise Exceptions.PyChatGPTException(">> Error when calling OpenAI API: " + str(e)) from e
@@ -405,51 +328,36 @@ class Chat:
                         }
                     ret_text += f'data: {json.dumps(data_chat)}\n\n'
         return ret_text.encode()
-
-    async def _handle_stream_response(self, options: dict):
-        res_queue = Queue()
-
+    
+    async def get_stream_response(self, options: dict, queue: Queue):
         def content_callback(res):
-            res_queue.put(res)
-
-        def handle_task():
-            res = self.__session.post(
-                "https://chat.openai.com/backend-api/conversation",
-                **options,
-                content_callback=content_callback
-            )
-            if res.status_code != 200:
-                print(f"Error code stream: {res.status_code}")
-                raise Exceptions.PyChatGPTException("Error when getting data: " + str(res.status_code) + " : " + str(res.content))
-
-        task = ThreadWithHandleException(target=handle_task)
-        task.start()
-        ret_combine = ""
+            asyncio.ensure_future(queue.put(res))
+        
+        res = await self.__session.post(
+            "https://chat.openai.com/backend-api/conversation",
+            **options,
+            content_callback=content_callback
+        )
+        if res.status_code != 200:
+            print(f"Error code stream: {res.status_code}")
+            raise Exceptions.PyChatGPTException("Error when getting data: " + str(res.status_code) + " : " + str(res.content))        
+    
+    async def _handle_stream_response(self, options: dict):
+        res_queue = asyncio.Queue()
+        producer_task = asyncio.create_task(self.get_stream_response(options, res_queue))
+        asyncio.ensure_future(producer_task)
         while True:
-            next_res = res_queue.get()
-            next_res_str = next_res.decode()
-            if b"[DONE]" in next_res or next_res == "\n\n":
-                yield next_res
+            next_res = await res_queue.get()
+            yield next_res
+            if b"[DONE]" in next_res:
                 break
-            if next_res_str.endswith("\n\n") and next_res_str.startswith("data: "):
-                yield self.convert_to_expected_str(next_res_str)
-            else:
-                ret_combine = ret_combine + next_res_str
-                if ret_combine.endswith("\n\n") and ret_combine.startswith("data: "):
-                    yield self.convert_to_expected_str(ret_combine)
-                    ret_combine = ""
-        try:
-            task.join()
-        except Exception as exc:
-            raise Exceptions.PyChatGPTException("Error when getting stream data: " + str(exc))
 
-
-    def _handle_non_stream_response(self, options: dict):
+    async def _handle_non_stream_response(self, options: dict):
         ret = []
         def content_callback(res):
             ret.append(res.decode())
 
-        res = self.__session.post(
+        res = await self.__session.post(
                 "https://chat.openai.com/backend-api/conversation",
                 **options,
                 content_callback=content_callback

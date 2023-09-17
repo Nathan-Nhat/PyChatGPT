@@ -32,7 +32,7 @@ class Auth:
         self.email_address = email_address
         self.password = password
         self.proxy = proxy
-        self.__session = requests.Session()
+        self.__session = requests.AsyncSession()
 
     @staticmethod
     def _url_encode(string: str) -> str:
@@ -43,7 +43,7 @@ class Auth:
         """
         return urllib.parse.quote(string)
 
-    def create_token(self):
+    async def create_token(self):
         """
             Begin the auth process
         """
@@ -72,19 +72,19 @@ class Auth:
         url = "https://chat.openai.com/auth/login"
         print(f"{Fore.GREEN}[OpenAI][1] {Fore.WHITE}Making request to {url}")
 
-        response = self.__session.get(url=url, impersonate="chrome110")
+        response = await self.__session.get(url=url, impersonate="chrome110")
         if response.status_code == 200:
             print(f"{Fore.GREEN}[OpenAI][1] {Fore.WHITE}Request was " + Fore.GREEN + "successful")
             session_url = "https://chat.openai.com/api/auth/session"
             print(f"{Fore.GREEN}[OpenAI][1] {Fore.WHITE}Making request to {session_url}")
-            res = self.__session.get(session_url, impersonate="chrome110")
+            res = await self.__session.get(session_url, impersonate="chrome110")
             if (res.status_code == 200):
                 print(f"{Fore.GREEN}[OpenAI][1] {Fore.WHITE}Request was " + Fore.GREEN + "successful")
-                self._part_two()
+                await self._part_two()
         else:
             raise Exceptions.Auth0Exception("Failed to make the first request, Try that again!")
 
-    def _part_two(self):
+    async def _part_two(self):
         """
         In part two, We make a request to https://chat.openai.com/api/auth/csrf and grab a fresh csrf token
         """
@@ -93,16 +93,16 @@ class Auth:
         url = "https://chat.openai.com/api/auth/csrf"
         print(f"{Fore.GREEN}[OpenAI][2] {Fore.WHITE}Grabbing CSRF token from {url}")
         a = self.__session.cookies
-        response = self.__session.get(url=url, impersonate="chrome110")
+        response = await self.__session.get(url=url, impersonate="chrome110")
         if response.status_code == 200 and 'json' in response.headers['Content-Type']:
             print(f"{Fore.GREEN}[OpenAI][2] {Fore.WHITE}Request was " + Fore.GREEN + "successful")
             csrf_token = response.json()["csrfToken"]
             print(f"{Fore.GREEN}[OpenAI][2] {Fore.WHITE}CSRF Token: {csrf_token}")
-            self._part_three(token=csrf_token)
+            await self._part_three(token=csrf_token)
         else:
             raise Exceptions.Auth0Exception("[OpenAI][2] Failed to make the request, Try that again!")
 
-    def _part_three(self, token: str):
+    async def _part_three(self, token: str):
         """
         We reuse the token from part to make a request to /api/auth/signin/auth0?prompt=login
         """
@@ -111,7 +111,7 @@ class Auth:
 
         payload = f'callbackUrl=%2F&csrfToken={token}&json=true'
         print(f"{Fore.GREEN}[OpenAI][3] {Fore.WHITE}Making request to {url}")
-        response = self.__session.post(url=url, impersonate="chrome110", data=payload)
+        response = await self.__session.post(url=url, impersonate="chrome110", data=payload)
         if response.status_code == 200 and 'json' in response.headers['Content-Type']:
             print(f"{Fore.GREEN}[OpenAI][3] {Fore.WHITE}Request was " + Fore.GREEN + "successful")
             url = response.json()["url"]
@@ -120,38 +120,38 @@ class Auth:
                 raise Exceptions.PyChatGPTException("You have been rate limited.")
 
             print(f"{Fore.GREEN}[OpenAI][3] {Fore.WHITE}Callback URL: {url}")
-            self._part_four(url=url)
+            await self._part_four(url=url)
         elif response.status_code == 400:
             raise Exceptions.IPAddressRateLimitException("[OpenAI][3] Bad request from your IP address, "
                                                          "try again in a few minutes")
         else:
             raise Exceptions.Auth0Exception("[OpenAI][3] Failed to make the request, Try that again!")
 
-    def _part_four(self, url: str):
+    async def _part_four(self, url: str):
         """
         We make a GET request to url
         :param url:
         :return:
         """
         print(f"{Fore.GREEN}[OpenAI][4] {Fore.WHITE}Making request to {url}")
-        response = self.__session.get(url=url, impersonate="chrome110", allow_redirects=False)
+        response = await self.__session.get(url=url, impersonate="chrome110", allow_redirects=False)
         if response.status_code == 302:
             print(f"{Fore.GREEN}[OpenAI][4] {Fore.WHITE}Request was " + Fore.GREEN + "successful")
             state = re.findall(r"state=(.*)", response.text)[0]
             state = state.split('"')[0]
             print(f"{Fore.GREEN}[OpenAI][4] {Fore.WHITE}Current State: {state}")
-            self._part_five(state=state)
+            await self._part_five(state=state)
         else:
             raise Exceptions.Auth0Exception("[OpenAI][4] Failed to make the request, Try that again!")
 
-    def _part_five(self, state: str):
+    async def _part_five(self, state: str):
         """
         We use the state to get the login page & check for a captcha
         """
         url = f"https://auth0.openai.com/u/login/identifier?state={state}"
 
         print(f"{Fore.GREEN}[OpenAI][5] {Fore.WHITE}Making request to {url}")
-        response = self.__session.get(url, impersonate="chrome110")
+        response = await self.__session.get(url, impersonate="chrome110")
         if response.status_code == 200:
             print(f"{Fore.GREEN}[OpenAI][5] {Fore.WHITE}Request was " + Fore.GREEN + "successful")
             soup = BeautifulSoup(response.text, 'lxml')
@@ -174,17 +174,17 @@ class Auth:
                                       f"press enter to continue: ")
                 if captcha_input:
                     print(f"{Fore.GREEN}[OpenAI][5] {Fore.WHITE}Continuing...")
-                    self._part_six(state=state, captcha=captcha_input)
+                    await self._part_six(state=state, captcha=captcha_input)
                 else:
                     raise Exceptions.PyChatGPTException("[OpenAI][5] You didn't enter anything.")
 
             else:
                 print(f"{Fore.GREEN}[OpenAI][5] {Fore.GREEN}No captcha detected")
-                self._part_six(state=state, captcha=None)
+                await self._part_six(state=state, captcha=None)
         else:
             raise Exceptions.Auth0Exception("[OpenAI][5] Failed to make the request, Try that again!")
 
-    def _part_six(self, state: str, captcha: str or None):
+    async def _part_six(self, state: str, captcha: str or None):
         """
         We make a POST request to the login page with the captcha, email
         :param state:
@@ -199,14 +199,14 @@ class Auth:
         if captcha is None:
             payload = f'state={state}&username={email_url_encoded}&js-available=false&webauthn-available=true&is-brave=false&webauthn-platform-available=true&action=default'
 
-        response = self.__session.post(url, impersonate="chrome110", data=payload, allow_redirects=False)
+        response = await self.__session.post(url, impersonate="chrome110", data=payload, allow_redirects=False)
         if response.status_code == 302:
             print(f"{Fore.GREEN}[OpenAI][6] {Fore.WHITE}Email found")
-            self._part_seven(state=state)
+            await self._part_seven(state=state)
         else:
             raise Exceptions.Auth0Exception("[OpenAI][6] Email not found, Check your email address and try again!")
 
-    def _part_seven(self, state: str):
+    async def _part_seven(self, state: str):
         """
         We enter the password
         :param state:
@@ -218,7 +218,7 @@ class Auth:
         email_url_encoded = self._url_encode(self.email_address)
         password_url_encoded = self._url_encode(self.password)
         payload = f'state={state}&username={email_url_encoded}&password={password_url_encoded}&action=default'
-        response = self.__session.post(url, impersonate="chrome110", data=payload, allow_redirects=False)
+        response = await self.__session.post(url, impersonate="chrome110", data=payload, allow_redirects=False)
         is_302 = response.status_code == 302
         if is_302:
             print(f"{Fore.GREEN}[OpenAI][7] {Fore.WHITE}Password was " + Fore.GREEN + "correct")
@@ -226,25 +226,25 @@ class Auth:
             new_state = new_state.split('"')[0]
             print(f"{Fore.GREEN}[OpenAI][7] {Fore.WHITE}Old state: {Fore.GREEN}{state}")
             print(f"{Fore.GREEN}[OpenAI][7] {Fore.WHITE}New State: {Fore.GREEN}{new_state}")
-            self._part_eight(old_state=state, new_state=new_state)
+            await self._part_eight(old_state=state, new_state=new_state)
         else:
             raise Exceptions.Auth0Exception("[OpenAI][7] Password was incorrect or captcha was wrong")
 
-    def _part_eight(self, old_state: str, new_state):
+    async def _part_eight(self, old_state: str, new_state):
         url = f"https://auth0.openai.com/authorize/resume?state={new_state}"
         print(f"{Fore.GREEN}[OpenAI][8] {Fore.WHITE}Making request to {Fore.GREEN}{url}")
-        response = self.__session.get(url, impersonate="chrome110", allow_redirects=False)
+        response = await self.__session.get(url, impersonate="chrome110", allow_redirects=False)
         is_302 = response.status_code == 302
         if is_302:
             print(f"{Fore.GREEN}[OpenAI][8] {Fore.WHITE}All good")
-            res = self.__session.get(response.redirect_url, impersonate="chrome110", allow_redirects=True)
+            res = await self.__session.get(response.redirect_url, impersonate="chrome110", allow_redirects=True)
             if res.status_code == 200:
                 expired_date = None
                 for cookie in self.__session.cookies.jar:
                     if cookie.name == "__Secure-next-auth.session-token":
                         expired_date = cookie.expires
                         break
-                self.save_session({
+                await self.save_session({
                         "__Secure-next-auth.session-token": {
                             "value": self.__session.cookies.get("__Secure-next-auth.session-token"),
                             "expires": expired_date
@@ -255,7 +255,7 @@ class Auth:
                       f" Auth0 did not issue an access token.")
 
     @staticmethod
-    def save_session(session: dict):
+    async def save_session(session: dict):
         try:
             print(f"{Fore.GREEN}[OpenAI][9] {Fore.WHITE}Saving session...")
             path = os.path.dirname(os.path.abspath(__file__))
@@ -268,7 +268,7 @@ class Auth:
             raise e
 
     @staticmethod
-    def get_session() -> dict:
+    async def get_session() -> dict:
         """
             Get session
             returns:
@@ -286,7 +286,7 @@ class Auth:
             return None
         
     @staticmethod
-    def session_expired() -> dict:
+    async  def session_expired() -> bool:
         try:
         # Get path using os, it's in ./classes/auth.json
             path = os.path.dirname(os.path.abspath(__file__))
